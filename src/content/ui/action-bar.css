@@ -1,0 +1,15 @@
+.nlk-action-bar {
+  position: sticky;
+  top: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #1a73e8;
+  color: #fff;
+  font: 14px/1.4 system-ui, sans-serif;
+}
+.nlk-action-bar button { cursor: pointer; }
+.nlk-action-bar button[disabled] { opacity: 0.5; cursor: default; }
+.nlk-action-bar .nlk-spacer { flex: 1; }
