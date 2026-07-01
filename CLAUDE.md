@@ -49,6 +49,11 @@ npx vitest run -t "aborts"             # 名前指定で単一テスト
 - **ストア公開を見据えた制約**（`docs/requirements.md` §3.3）: 権限最小化（`host_permissions: notebooklm.google.com` のみ ——`manifest.config.ts` 参照）、外部ネットワーク送信ゼロ / トラッカー無し、日英 i18n。これらは維持すること。
 - Linter / フォーマッタは未設定。静的チェックのゲートは `npm run typecheck`（strict モード。未使用のローカル変数 / 引数はエラー）。
 
+## Issue 作成
+
+- **レビュー指摘のうち当該 PR で対応しないものは issue 化する。** コードレビューで挙がった指摘で、その PR のスコープでは修正しないが対応した方が良いものは、放置せず GitHub issue として起票する。
+- **issue には優先度とカテゴリのラベルを付ける。** 優先度（例: `priority: high` / `priority: medium` / `priority: low`）と、カテゴリ（例: `refactor` / `security` / `chore` / `bug` / `enhancement` / `documentation` など）を必ず付与する。該当するラベルがリポジトリに無ければ作成してから付ける。
+
 ## 計画ドキュメント
 
 `docs/superpowers/specs/` と `docs/superpowers/plans/` に設計仕様と実装計画がある（本リポジトリは Superpowers のブレスト→仕様→計画のワークフローを使う）。フェーズを実装する前に、意図された設計をここで確認すること。

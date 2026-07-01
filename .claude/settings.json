@@ -1,0 +1,7 @@
+{
+  "language": "japanese",
+  "permissions": {
+    "defaultMode": "auto"
+  },
+  "model": "opus"
+}
