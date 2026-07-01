@@ -67,7 +67,12 @@ export function init(root: ParentNode = document): () => void {
         signal: ac.signal,
         onProgress: (p) => bar.setProgress(t('progress', { done: p.completed, total: p.total })),
       })
-      bar.setProgress(t('doneSummary', { ok: result.succeeded.length, ng: result.failed.length }))
+      if (result.aborted) {
+        const rest = targets.length - result.succeeded.length - result.failed.length
+        bar.setProgress(t('abortedSummary', { ok: result.succeeded.length, rest }))
+      } else {
+        bar.setProgress(t('doneSummary', { ok: result.succeeded.length, ng: result.failed.length }))
+      }
       // 成功分のみ選択解除
       for (const key of result.succeeded) store.set(key, false)
       syncCheckboxes(store, root)

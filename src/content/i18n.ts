@@ -12,6 +12,7 @@ const EN = {
   deleteNow: 'Delete',
   progress: 'Deleting {done} / {total}…',
   doneSummary: 'Done: {ok} succeeded / {ng} failed',
+  abortedSummary: 'Stopped: {ok} deleted / {rest} not processed',
   abort: 'Stop',
   domError: 'Stopped: NotebookLM UI structure did not match expectations',
 } as const
@@ -32,6 +33,7 @@ const MESSAGES: Record<Lang, Record<MsgKey, string>> = {
     deleteNow: '削除',
     progress: '{done} / {total} 削除中…',
     doneSummary: '完了: 成功 {ok}件 / 失敗 {ng}件',
+    abortedSummary: '中断しました: 成功 {ok}件 / 残り {rest}件は未処理',
     abort: '中断',
     domError: 'NotebookLM の画面構造が想定と異なるため中断しました',
   },

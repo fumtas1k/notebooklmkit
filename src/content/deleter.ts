@@ -35,8 +35,9 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
     return dialog ? deps.getConfirmDeleteButton(dialog) : null
   }, { timeout })
   deps.click(confirm)
-  // ⑤ 行が DOM から消えるまで待つ
-  await w(() => (deps.findRow(target) ? null : true), { timeout })
+  // ⑤ 削除した行ノード自身が DOM から外れるまで待つ。
+  // title で再検索すると同名の別行を拾い続けて誤タイムアウトするため、掴んだ行を見る。
+  await w(() => (row.isConnected ? null : true), { timeout })
 }
 
 export async function deleteNotebooks(
