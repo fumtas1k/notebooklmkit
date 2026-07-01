@@ -18,17 +18,12 @@ export function getNotebookRows(root: ParentNode = document): HTMLElement[] {
 
 export function getRowIdentity(row: HTMLElement): RowIdentity {
   const title = row.querySelector(SELECTORS.title)?.textContent?.trim() ?? ''
-  const jslog = row.getAttribute('jslog')
-  return { title, jslog: jslog && jslog.length > 0 ? jslog : null }
+  return { title }
 }
 
+// 行 `jslog` は全行同一で識別子に使えないため、タイトルで一致を取る。
 export function findRowByIdentity(id: RowIdentity, root: ParentNode = document): HTMLElement | null {
-  const rows = getNotebookRows(root)
-  if (id.jslog) {
-    const byJslog = rows.find((r) => r.getAttribute('jslog') === id.jslog)
-    if (byJslog) return byJslog
-  }
-  return rows.find((r) => getRowIdentity(r).title === id.title) ?? null
+  return getNotebookRows(root).find((r) => getRowIdentity(r).title === id.title) ?? null
 }
 
 export function getMoreButton(row: HTMLElement): HTMLElement | null {

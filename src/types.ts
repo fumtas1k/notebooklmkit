@@ -1,6 +1,5 @@
 export interface RowIdentity {
   title: string
-  jslog: string | null
 }
 
 export interface NotebookTarget extends RowIdentity {
@@ -20,7 +19,9 @@ export interface DeleteResult {
   aborted: boolean
 }
 
+// キーはタイトル。NotebookLM の行 `jslog` は全行で同一の汎用トラッキング記述子
+// （行ごとに一意でない）ため、識別子として使えない。実機確認済み（2026-07-02）。
+// 同名ノートブックは区別できないが実運用ではほぼ一意（既知エッジケース）。
 export function makeTarget(id: RowIdentity): NotebookTarget {
-  const key = id.jslog ?? `title:${id.title}`
-  return { ...id, key }
+  return { ...id, key: `title:${id.title}` }
 }

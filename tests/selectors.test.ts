@@ -36,29 +36,23 @@ describe('selectors', () => {
     expect(getNotebookRows().length).toBe(2)
   })
 
-  it('reads identity with jslog and title', () => {
+  it('reads identity as the row title (ignores the shared jslog)', () => {
     const [row] = getNotebookRows()
-    expect(getRowIdentity(row)).toEqual({ title: 'Alpha', jslog: '12345;track:xyz' })
+    expect(getRowIdentity(row)).toEqual({ title: 'Alpha' })
   })
 
-  it('reads identity with null jslog', () => {
+  it('reads identity for a row without jslog', () => {
     const row = getNotebookRows()[1]
-    expect(getRowIdentity(row)).toEqual({ title: 'Beta', jslog: null })
+    expect(getRowIdentity(row)).toEqual({ title: 'Beta' })
   })
 
-  it('finds a row by identity (jslog preferred)', () => {
-    const found = findRowByIdentity({ title: 'Alpha', jslog: '12345;track:xyz' })
-    expect(found).not.toBeNull()
-    expect(getRowIdentity(found!).title).toBe('Alpha')
-  })
-
-  it('finds a row by title when jslog is null', () => {
-    const found = findRowByIdentity({ title: 'Beta', jslog: null })
+  it('finds a row by title', () => {
+    const found = findRowByIdentity({ title: 'Beta' })
     expect(getRowIdentity(found!).title).toBe('Beta')
   })
 
   it('returns null when the row is gone', () => {
-    expect(findRowByIdentity({ title: 'Ghost', jslog: null })).toBeNull()
+    expect(findRowByIdentity({ title: 'Ghost' })).toBeNull()
   })
 
   it('gets the more button of a row', () => {

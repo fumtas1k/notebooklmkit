@@ -36,7 +36,7 @@ function makeWorld(titles: string[]) {
 }
 
 const targets = (...names: string[]): NotebookTarget[] =>
-  names.map((n) => makeTarget({ title: n, jslog: null }))
+  names.map((n) => makeTarget({ title: n }))
 
 describe('deleteNotebooks', () => {
   it('deletes all targets sequentially and reports progress', async () => {

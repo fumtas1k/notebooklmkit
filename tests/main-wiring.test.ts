@@ -10,7 +10,7 @@ vi.mock('../src/content/deleter', () => ({
 
 const LIST = `
 <div class="all-projects-container"><project-table><table class="project-table"><tbody>
-  <tr mat-row role="row" jslog="j1"><td class="title-column"><span class="project-table-title">A</span></td>
+  <tr mat-row role="row"><td class="title-column"><span class="project-table-title">A</span></td>
     <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
   <tr mat-row role="row"><td class="title-column"><span class="project-table-title">B</span></td>
     <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
@@ -20,10 +20,10 @@ describe('buildTargets', () => {
   beforeEach(() => { document.body.innerHTML = LIST })
   it('returns targets for currently selected keys only', () => {
     const store = new SelectionStore()
-    store.set('j1', true)
+    store.set('title:A', true)
     const targets = buildTargets(store)
     expect(targets.map((t) => t.title)).toEqual(['A'])
-    expect(targets[0].jslog).toBe('j1')
+    expect(targets.map((t) => t.key)).toEqual(['title:A'])
   })
 })
 
