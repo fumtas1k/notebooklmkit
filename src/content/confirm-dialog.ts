@@ -19,6 +19,7 @@ export function confirmDeletion(opts: {
 }): Promise<boolean> {
   const { count, isSelectAll, t, root = document.body } = opts
   const strong = needsStrongConfirm(count, isSelectAll)
+  const previouslyFocused = document.activeElement as HTMLElement | null
 
   return new Promise<boolean>((resolve) => {
     const overlay = document.createElement('div')
@@ -29,11 +30,15 @@ export function confirmDeletion(opts: {
     box.className = 'nlk-dialog'
     box.setAttribute('role', 'dialog')
     box.setAttribute('aria-modal', 'true')
+    box.setAttribute('aria-labelledby', 'nlk-confirm-title')
+    box.setAttribute('aria-describedby', 'nlk-confirm-body')
 
     const title = document.createElement('h2')
+    title.id = 'nlk-confirm-title'
     title.textContent = t('confirmTitle', { count })
 
     const body = document.createElement('p')
+    body.id = 'nlk-confirm-body'
     body.textContent = t('confirmBody')
 
     box.append(title, body)
@@ -67,10 +72,18 @@ export function confirmDeletion(opts: {
       settled = true
       document.removeEventListener('keydown', onKeydown, true)
       overlay.remove()
+      previouslyFocused?.focus?.()
       resolve(result)
     }
     const onKeydown = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape') cleanup(false)
+      if (ev.key === 'Escape') {
+        cleanup(false)
+        return
+      }
+      if (ev.key === 'Enter') {
+        if (strong && !isConfirmInputValid(input!.value, count)) return
+        cleanup(true)
+      }
     }
     document.addEventListener('keydown', onKeydown, true)
 

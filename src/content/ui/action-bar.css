@@ -13,3 +13,12 @@
 .nlk-action-bar button { cursor: pointer; }
 .nlk-action-bar button[disabled] { opacity: 0.5; cursor: default; }
 .nlk-action-bar .nlk-spacer { flex: 1; }
+.nlk-action-bar button[data-nlk="bar-delete"] {
+  background: #d93025;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-weight: 600;
+}
+.nlk-action-bar button[data-nlk="bar-delete"][disabled] { background: #b0b0b0; }

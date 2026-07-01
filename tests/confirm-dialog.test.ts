@@ -68,6 +68,21 @@ describe('confirmDeletion (strong, type-to-confirm)', () => {
   })
 })
 
+describe('confirmDeletion (a11y: labelling)', () => {
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  it('dialog box has aria-labelledby and aria-describedby pointing at existing elements', () => {
+    confirmDeletion({ count: 3, isSelectAll: false, t })
+    const box = document.querySelector<HTMLElement>('.nlk-dialog')!
+    const labelledBy = box.getAttribute('aria-labelledby')
+    const describedBy = box.getAttribute('aria-describedby')
+    expect(labelledBy).toBeTruthy()
+    expect(describedBy).toBeTruthy()
+    expect(document.getElementById(labelledBy!)).not.toBeNull()
+    expect(document.getElementById(describedBy!)).not.toBeNull()
+  })
+})
+
 describe('confirmDeletion (a11y: escape / backdrop)', () => {
   beforeEach(() => { document.body.innerHTML = '' })
 
@@ -91,5 +106,29 @@ describe('confirmDeletion (a11y: escape / backdrop)', () => {
     overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(await p).toBe(false)
     expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
+  })
+})
+
+describe('confirmDeletion (a11y: Enter to confirm)', () => {
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  it('Enter confirms a normal (small-count) dialog', async () => {
+    const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(await p).toBe(true)
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
+  })
+
+  it('Enter does not confirm a strong dialog while the typed count does not match', async () => {
+    const p = confirmDeletion({ count: 12, isSelectAll: false, t })
+    const input = document.querySelector<HTMLInputElement>('[data-nlk="confirm-input"]')!
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+
+    input.value = '12'
+    input.dispatchEvent(new Event('input'))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(await p).toBe(true)
   })
 })
