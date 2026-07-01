@@ -116,4 +116,42 @@ describe('runDelete error recovery', () => {
 
     errSpy.mockRestore()
   })
+
+  it('shows the abortedSummary (not doneSummary) when deleteNotebooks resolves aborted', async () => {
+    vi.mocked(deleteNotebooks).mockResolvedValue({
+      succeeded: ['title:A'],
+      failed: [],
+      aborted: true,
+    })
+
+    // Detached root, same rationale as the error-recovery test above: avoids
+    // interference from stale MutationObservers left by earlier init() calls
+    // in this file.
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    init(root)
+    const checkbox = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
+    expect(checkbox).not.toBeNull()
+    checkbox!.checked = true
+    checkbox!.dispatchEvent(new Event('change'))
+
+    const deleteBtn = document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')
+    deleteBtn!.click()
+
+    // Single selected item -> normal confirm dialog, confirm-ok enabled immediately.
+    const okBtn = document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')
+    expect(okBtn).not.toBeNull()
+    okBtn!.click()
+
+    // Flush the microtask queue so the resolved deleteNotebooks() and the
+    // surrounding try/finally in runDelete settle.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const stopBtn = document.querySelector<HTMLButtonElement>('[data-nlk="bar-stop"]')
+    const progress = document.querySelector('[data-nlk="bar-progress"]')
+    expect(stopBtn!.hidden).toBe(true) // bar left the busy state
+    expect(deleteBtn!.hidden).toBe(false)
+    expect(progress!.textContent).toMatch(/中断しました|not processed/)
+    expect(progress!.textContent).not.toMatch(/^完了|^Done/)
+  })
 })

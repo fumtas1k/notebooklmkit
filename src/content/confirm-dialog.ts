@@ -77,10 +77,18 @@ export function confirmDeletion(opts: {
     }
     const onKeydown = (ev: KeyboardEvent) => {
       if (ev.key === 'Escape') {
+        ev.preventDefault()
+        ev.stopPropagation()
         cleanup(false)
         return
       }
       if (ev.key === 'Enter') {
+        // Swallow Enter unconditionally while the dialog is open, even when
+        // the strong-confirm validation guard blocks the actual confirm, so
+        // the keystroke never leaks through to NotebookLM's page behind the
+        // modal.
+        ev.preventDefault()
+        ev.stopPropagation()
         if (strong && !isConfirmInputValid(input!.value, count)) return
         cleanup(true)
       }

@@ -132,3 +132,54 @@ describe('confirmDeletion (a11y: Enter to confirm)', () => {
     expect(await p).toBe(true)
   })
 })
+
+describe('confirmDeletion (keys do not leak to the page behind the modal)', () => {
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  it('stops Enter from bubbling past the dialog (normal dialog)', async () => {
+    const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    const box = document.querySelector<HTMLElement>('.nlk-dialog')!
+
+    let bodyHeard = false
+    document.body.addEventListener('keydown', () => { bodyHeard = true })
+
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+
+    expect(await p).toBe(true)
+    expect(bodyHeard).toBe(false)
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
+  })
+
+  it('stops Enter from bubbling past the dialog even when strong-confirm validation blocks the confirm', async () => {
+    const p = confirmDeletion({ count: 12, isSelectAll: false, t })
+    const input = document.querySelector<HTMLInputElement>('[data-nlk="confirm-input"]')!
+
+    let bodyHeard = false
+    document.body.addEventListener('keydown', () => { bodyHeard = true })
+
+    // typed count does not match -> Enter must not confirm...
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+    // ...but it still must not leak through to the page.
+    expect(bodyHeard).toBe(false)
+
+    input.value = '12'
+    input.dispatchEvent(new Event('input'))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(await p).toBe(true)
+  })
+
+  it('stops Escape from bubbling past the dialog', async () => {
+    const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    const box = document.querySelector<HTMLElement>('.nlk-dialog')!
+
+    let bodyHeard = false
+    document.body.addEventListener('keydown', () => { bodyHeard = true })
+
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+
+    expect(await p).toBe(false)
+    expect(bodyHeard).toBe(false)
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
+  })
+})
