@@ -1,5 +1,5 @@
 import {
-  getNotebookRows, getRowIdentity, findRowByIdentity,
+  getNotebookRows, getRowIdentity, findRowByIdentity, getRowKey,
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
 } from './selectors'
 import { makeTarget, type NotebookTarget } from '../types'
@@ -33,7 +33,7 @@ export function init(root: ParentNode = document): () => void {
     t,
     handlers: {
       onSelectAll: () => {
-        store.replaceAll(getNotebookRows(root).map((r) => makeTarget(getRowIdentity(r)).key))
+        store.replaceAll(getNotebookRows(root).map((r) => getRowKey(r)))
         syncCheckboxes(store, root)
       },
       onClearAll: () => { store.clear(); syncCheckboxes(store, root) },
@@ -41,6 +41,15 @@ export function init(root: ParentNode = document): () => void {
       onStop: () => { currentAbort?.abort() },
     },
   })
+
+  // 一覧が再描画されたらチェックボックスを注入し直す
+  // アクションバー/進捗表示は document.body 側にあるため、再スキャン対象は
+  // ノートブック一覧コンテナに絞り、setProgress 等のテキスト更新で
+  // 無駄な再スキャンが走らないようにする。
+  const observer = new MutationObserver(() => injectRowCheckboxes(store, root))
+  const listContainer = root.querySelector('.all-projects-container')
+  const container = listContainer ?? (root instanceof Document ? root.body : (root as Element)) ?? document.body
+  observer.observe(container, { childList: true, subtree: true })
 
   async function runDelete(): Promise<void> {
     const targets = buildTargets(store, root)
@@ -52,6 +61,9 @@ export function init(root: ParentNode = document): () => void {
 
     const ac = new AbortController()
     currentAbort = ac
+    // 削除中は自分たちで行を書き換える（＝一覧を大量に mutate する）ため、
+    // 再スキャン observer を止めて O(n^2) の無駄な再注入を避ける。
+    observer.disconnect()
     bar.setBusy(true)
     try {
       const deps: DeleterDeps = {
@@ -82,17 +94,11 @@ export function init(root: ParentNode = document): () => void {
     } finally {
       bar.setBusy(false)
       currentAbort = null
+      // 再スキャンを再開し、削除実行中に変化した行を一度だけ同期し直す。
+      observer.observe(container, { childList: true, subtree: true })
+      injectRowCheckboxes(store, root)
     }
   }
-
-  // 一覧が再描画されたらチェックボックスを注入し直す
-  // アクションバー/進捗表示は document.body 側にあるため、再スキャン対象は
-  // ノートブック一覧コンテナに絞り、setProgress 等のテキスト更新で
-  // 無駄な再スキャンが走らないようにする。
-  const observer = new MutationObserver(() => injectRowCheckboxes(store, root))
-  const listContainer = root.querySelector('.all-projects-container')
-  const container = listContainer ?? (root instanceof Document ? root.body : (root as Element)) ?? document.body
-  observer.observe(container, { childList: true, subtree: true })
 
   return () => {
     observer.disconnect()
@@ -102,7 +108,7 @@ export function init(root: ParentNode = document): () => void {
 
 function syncCheckboxes(store: SelectionStore, root: ParentNode): void {
   for (const row of getNotebookRows(root)) {
-    const key = makeTarget(getRowIdentity(row)).key
+    const key = getRowKey(row)
     const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
     if (box) box.checked = store.has(key)
   }

@@ -28,6 +28,13 @@ describe('injectRowCheckboxes', () => {
     expect(store.has('title:A')).toBe(true)
   })
 
+  it('labels the injected checkbox with the notebook title for a11y', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const box = document.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(box.getAttribute('aria-label')).toBe('A')
+  })
+
   it('injects into the existing title cell without adding a new column', () => {
     const store = new SelectionStore()
     injectRowCheckboxes(store)

@@ -1,4 +1,4 @@
-import { getNotebookRows, getRowIdentity, getTitleCell } from '../selectors'
+import { getNotebookRows, getRowIdentity, getTitleCell, getRowKey } from '../selectors'
 import { makeTarget } from '../../types'
 import type { SelectionStore } from '../selection'
 
@@ -17,13 +17,14 @@ export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = do
     const box = document.createElement('input')
     box.type = 'checkbox'
     box.setAttribute(CHECKBOX_ATTR, target.key)
+    box.setAttribute('aria-label', target.title)
     box.checked = store.has(target.key)
     box.style.marginRight = '12px'
     box.style.verticalAlign = 'middle'
     // 行クリック（ノートブックを開く）へ伝播させない。既定のトグルは維持。
     box.addEventListener('click', (ev) => ev.stopPropagation())
     box.addEventListener('change', () =>
-      store.set(makeTarget(getRowIdentity(row)).key, box.checked),
+      store.set(getRowKey(row), box.checked),
     )
     host.insertBefore(box, host.firstChild)
   }

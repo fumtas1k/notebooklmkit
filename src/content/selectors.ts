@@ -1,4 +1,4 @@
-import type { RowIdentity } from '../types'
+import { makeTarget, type RowIdentity } from '../types'
 
 // §8.5 の実 DOM 調査に基づくセレクタ。UI 変更時はこのファイルのみ修正する。
 export const SELECTORS = {
@@ -24,6 +24,11 @@ export function getRowIdentity(row: HTMLElement): RowIdentity {
 // 行 `jslog` は全行同一で識別子に使えないため、タイトルで一致を取る。
 export function findRowByIdentity(id: RowIdentity, root: ParentNode = document): HTMLElement | null {
   return getNotebookRows(root).find((r) => getRowIdentity(r).title === id.title) ?? null
+}
+
+// 行から選択キーを導出（identity → key を1箇所に集約）。
+export function getRowKey(row: HTMLElement): string {
+  return makeTarget(getRowIdentity(row)).key
 }
 
 export function getMoreButton(row: HTMLElement): HTMLElement | null {
