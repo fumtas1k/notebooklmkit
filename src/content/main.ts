@@ -20,7 +20,7 @@ export function buildTargets(store: SelectionStore, root: ParentNode = document)
     .filter((tgt) => selected.has(tgt.key))
 }
 
-export function init(root: ParentNode = document): void {
+export function init(root: ParentNode = document): () => void {
   const store = new SelectionStore()
   const t = createT(detectLang())
 
@@ -81,9 +81,18 @@ export function init(root: ParentNode = document): void {
   }
 
   // 一覧が再描画されたらチェックボックスを注入し直す
+  // アクションバー/進捗表示は document.body 側にあるため、再スキャン対象は
+  // ノートブック一覧コンテナに絞り、setProgress 等のテキスト更新で
+  // 無駄な再スキャンが走らないようにする。
   const observer = new MutationObserver(() => injectRowCheckboxes(store, root))
-  const container = (root instanceof Document ? root.body : (root as Element)) ?? document.body
+  const listContainer = root.querySelector('.all-projects-container')
+  const container = listContainer ?? (root instanceof Document ? root.body : (root as Element)) ?? document.body
   observer.observe(container, { childList: true, subtree: true })
+
+  return () => {
+    observer.disconnect()
+    bar.destroy()
+  }
 }
 
 function syncCheckboxes(store: SelectionStore, root: ParentNode): void {
@@ -94,7 +103,42 @@ function syncCheckboxes(store: SelectionStore, root: ParentNode): void {
   }
 }
 
-// content script として読み込まれたときだけ自動起動（テスト時は import のみで副作用なし）
-if (typeof document !== 'undefined' && document.querySelector('.all-projects-container')) {
-  init()
+// NotebookLM はクライアントレンダリングの Angular SPA のため、モジュール評価時点
+// では `.all-projects-container` がまだ DOM に無いことが多い（cold load / SPA 遷移）。
+// 既に存在すれば即 init、無ければ出現を待って一度だけ init する。
+export function start(root: ParentNode = document): () => void {
+  const CONTAINER_SELECTOR = '.all-projects-container'
+
+  if (root.querySelector(CONTAINER_SELECTOR)) {
+    return init(root)
+  }
+
+  let disposeInit: (() => void) | null = null
+  const target: Element =
+    (root instanceof Document ? (root.documentElement ?? root.body) : (root as Element)) ?? document.documentElement
+
+  const bootstrapObserver = new MutationObserver(() => {
+    if (disposeInit) return // 既に init 済みなら再度呼ばない
+    if (root.querySelector(CONTAINER_SELECTOR)) {
+      bootstrapObserver.disconnect()
+      disposeInit = init(root)
+    }
+  })
+  bootstrapObserver.observe(target, { childList: true, subtree: true })
+
+  return () => {
+    bootstrapObserver.disconnect()
+    disposeInit?.()
+  }
+}
+
+// content script として読み込まれたときだけ自動起動。
+// テスト(jsdom)では location.hostname が notebooklm.google.com にならないため
+// import しても副作用は発生しない。
+if (
+  typeof document !== 'undefined' &&
+  typeof location !== 'undefined' &&
+  location.hostname === 'notebooklm.google.com'
+) {
+  start()
 }

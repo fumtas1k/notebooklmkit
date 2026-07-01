@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { init, buildTargets } from '../src/content/main'
+import { init, start, buildTargets } from '../src/content/main'
 import { SelectionStore } from '../src/content/selection'
 import { CHECKBOX_ATTR } from '../src/content/ui/row-checkbox'
 import { deleteNotebooks } from '../src/content/deleter'
@@ -33,6 +33,40 @@ describe('init', () => {
     init()
     expect(document.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(2)
     expect(document.querySelector('[data-nlk="action-bar"]')).not.toBeNull()
+  })
+})
+
+describe('start (async / SPA mount)', () => {
+  it('waits for .all-projects-container to appear, then bootstraps init exactly once', async () => {
+    // Use a detached, dedicated root: no `.all-projects-container` exists yet,
+    // simulating a cold/SPA load where the container mounts asynchronously.
+    // Scoping the DOM (and the bootstrap observer) to a detached root keeps
+    // this test isolated from stale MutationObservers left behind by other
+    // `init()` calls elsewhere in this file (init/start never auto-disconnect
+    // unless the caller keeps and invokes the returned disposer).
+    const root = document.createElement('div')
+    expect(root.querySelector('.all-projects-container')).toBeNull()
+
+    const dispose = start(root)
+    expect(root.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(0)
+
+    root.innerHTML = LIST
+    // MutationObserver callbacks are queued as microtasks.
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(root.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(2)
+    expect(document.querySelector('[data-nlk="action-bar"]')).not.toBeNull()
+
+    dispose()
+  })
+
+  it('calls init immediately when the container already exists', () => {
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    const dispose = start(root)
+    expect(root.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(2)
+    dispose()
   })
 })
 
