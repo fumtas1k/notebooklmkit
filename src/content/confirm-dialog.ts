@@ -62,7 +62,10 @@ export function confirmDeletion(opts: {
       overlay.remove()
       resolve(result)
     }
-    ok.addEventListener('click', () => cleanup(true))
+    ok.addEventListener('click', () => {
+      if (strong && !isConfirmInputValid(input!.value, count)) return
+      cleanup(true)
+    })
     cancel.addEventListener('click', () => cleanup(false))
 
     box.append(cancel, ok)

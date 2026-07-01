@@ -57,4 +57,13 @@ describe('confirmDeletion (strong, type-to-confirm)', () => {
     ok.click()
     expect(await p).toBe(true)
   })
+
+  it('ignores a dispatched click on the confirm button when the typed count does not match', () => {
+    confirmDeletion({ count: 12, isSelectAll: false, t })
+    const ok = document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!
+    // bypass the disabled attribute the way a rogue script could
+    ok.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    // guard should prevent resolution: overlay is still present, not cleaned up
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+  })
 })
