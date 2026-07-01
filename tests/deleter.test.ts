@@ -52,6 +52,23 @@ describe('deleteNotebooks', () => {
     )
   })
 
+  it('waits for the confirm Delete button to render after the dialog appears', async () => {
+    const { deps, present } = makeWorld(['A'])
+    // mat-dialog-container は先に出るが Delete ボタンは遅れて描画される状況を再現：
+    // 最初の取得は null、次回以降ボタンを返す。同期取得だった旧実装なら失敗する。
+    const realGetBtn = deps.getConfirmDeleteButton
+    let calls = 0
+    deps.getConfirmDeleteButton = (dialog) => {
+      calls++
+      return calls < 2 ? null : realGetBtn(dialog)
+    }
+    const res = await deleteNotebooks(targets('A'), deps, {})
+    expect(res.succeeded.length).toBe(1)
+    expect(res.failed).toEqual([])
+    expect(present.size).toBe(0)
+    expect(calls).toBeGreaterThanOrEqual(2)
+  })
+
   it('records a failure when a row never disappears, and stops', async () => {
     const { deps } = makeWorld(['A', 'B'])
     // confirm click は行を消さないよう差し替え → 消滅待ちがタイムアウト

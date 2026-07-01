@@ -27,10 +27,13 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
   // ③ メニューの「削除」
   const del = await w(() => deps.getDeleteMenuItem(), { timeout })
   deps.click(del)
-  // ④ 確認ダイアログの Delete
-  const dialog = await w(() => deps.getConfirmDialog(), { timeout })
-  const confirm = deps.getConfirmDeleteButton(dialog)
-  if (!confirm) throw new Error('confirm delete button not found')
+  // ④ 確認ダイアログの Delete ボタン。
+  // mat-dialog-container は先に描画され、中の Delete ボタンは少し遅れて現れるため、
+  // ダイアログ容器ではなく「ボタン自体」の出現を待つ（同期取得だと null になる）。
+  const confirm = await w(() => {
+    const dialog = deps.getConfirmDialog()
+    return dialog ? deps.getConfirmDeleteButton(dialog) : null
+  }, { timeout })
   deps.click(confirm)
   // ⑤ 行が DOM から消えるまで待つ
   await w(() => (deps.findRow(target) ? null : true), { timeout })
