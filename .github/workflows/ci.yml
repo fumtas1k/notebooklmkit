@@ -6,6 +6,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+# typecheck / test / build のみで書き込みは不要のため最小権限に絞る
+permissions:
+  contents: read
+
 # 同一ブランチ / PR で連続してプッシュされた場合、実行中の古い CI を中断し最新のみ実行する
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -18,12 +22,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: "20"
           cache: npm
 
       - name: Install dependencies
