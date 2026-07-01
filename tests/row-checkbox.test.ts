@@ -27,4 +27,17 @@ describe('injectRowCheckboxes', () => {
     expect(store.size).toBe(1)
     expect(store.has('title:A')).toBe(true)
   })
+
+  it('writes the row current key at event time, not a stale injection-time key', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const row = document.querySelector('tr[mat-row]')!
+    // simulate the same node being reused with a new identity
+    row.querySelector('span.project-table-title')!.textContent = 'A-renamed'
+    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    box.checked = true
+    box.dispatchEvent(new Event('change'))
+    expect(store.has('title:A-renamed')).toBe(true)
+    expect(store.has('title:A')).toBe(false)
+  })
 })

@@ -16,7 +16,9 @@ export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = do
     box.type = 'checkbox'
     box.setAttribute(CHECKBOX_ATTR, target.key)
     box.checked = store.has(target.key)
-    box.addEventListener('change', () => store.set(target.key, box.checked))
+    box.addEventListener('change', () =>
+      store.set(makeTarget(getRowIdentity(row)).key, box.checked),
+    )
     cell.appendChild(box)
     row.insertBefore(cell, row.firstChild)
   }
