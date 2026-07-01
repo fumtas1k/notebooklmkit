@@ -1,4 +1,5 @@
 import type { createT } from './i18n'
+import './ui/confirm-dialog.css'
 
 export const STRONG_CONFIRM_THRESHOLD = 10
 
@@ -26,6 +27,8 @@ export function confirmDeletion(opts: {
 
     const box = document.createElement('div')
     box.className = 'nlk-dialog'
+    box.setAttribute('role', 'dialog')
+    box.setAttribute('aria-modal', 'true')
 
     const title = document.createElement('h2')
     title.textContent = t('confirmTitle', { count })
@@ -58,19 +61,32 @@ export function confirmDeletion(opts: {
     cancel.setAttribute('data-nlk', 'confirm-cancel')
     cancel.textContent = t('cancel')
 
+    let settled = false
     const cleanup = (result: boolean) => {
+      if (settled) return
+      settled = true
+      document.removeEventListener('keydown', onKeydown, true)
       overlay.remove()
       resolve(result)
     }
+    const onKeydown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') cleanup(false)
+    }
+    document.addEventListener('keydown', onKeydown, true)
+
     ok.addEventListener('click', () => {
       if (strong && !isConfirmInputValid(input!.value, count)) return
       cleanup(true)
     })
     cancel.addEventListener('click', () => cleanup(false))
+    // Clicking the backdrop (the overlay itself, not the dialog box) cancels.
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) cleanup(false)
+    })
 
     box.append(cancel, ok)
     overlay.appendChild(box)
     root.appendChild(overlay)
-    input?.focus()
+    ;(input ?? cancel).focus()
   })
 }

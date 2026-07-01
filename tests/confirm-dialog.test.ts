@@ -67,3 +67,29 @@ describe('confirmDeletion (strong, type-to-confirm)', () => {
     expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
   })
 })
+
+describe('confirmDeletion (a11y: escape / backdrop)', () => {
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  it('cancels on Escape keydown', async () => {
+    const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(await p).toBe(false)
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
+  })
+
+  it('cancels on overlay backdrop click, but not on inner dialog box click', async () => {
+    const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    const overlay = document.querySelector<HTMLElement>('[data-nlk="confirm-dialog"]')!
+    const box = overlay.querySelector<HTMLElement>('.nlk-dialog')!
+
+    // clicking the inner dialog box must NOT cancel
+    box.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+
+    // clicking the overlay backdrop itself cancels
+    overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(await p).toBe(false)
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
+  })
+})
