@@ -1,6 +1,25 @@
 export type Lang = 'ja' | 'en'
 
-const MESSAGES = {
+const EN = {
+  selectAll: 'Select all',
+  deselectAll: 'Clear all',
+  selectedCount: '{count} selected',
+  deleteSelected: 'Delete {count} selected',
+  confirmTitle: 'Delete {count} notebook(s)',
+  confirmBody: 'This action cannot be undone.',
+  confirmType: 'Type {count} to confirm',
+  cancel: 'Cancel',
+  deleteNow: 'Delete',
+  progress: 'Deleting {done} / {total}…',
+  doneSummary: 'Done: {ok} succeeded / {ng} failed',
+  abort: 'Stop',
+  domError: 'Stopped: NotebookLM UI structure did not match expectations',
+} as const
+
+export type MsgKey = keyof typeof EN
+
+const MESSAGES: Record<Lang, Record<MsgKey, string>> = {
+  en: EN,
   ja: {
     selectAll: 'すべて選択',
     deselectAll: 'すべて解除',
@@ -16,24 +35,7 @@ const MESSAGES = {
     abort: '中断',
     domError: 'NotebookLM の画面構造が想定と異なるため中断しました',
   },
-  en: {
-    selectAll: 'Select all',
-    deselectAll: 'Clear all',
-    selectedCount: '{count} selected',
-    deleteSelected: 'Delete {count} selected',
-    confirmTitle: 'Delete {count} notebook(s)',
-    confirmBody: 'This action cannot be undone.',
-    confirmType: 'Type {count} to confirm',
-    cancel: 'Cancel',
-    deleteNow: 'Delete',
-    progress: 'Deleting {done} / {total}…',
-    doneSummary: 'Done: {ok} succeeded / {ng} failed',
-    abort: 'Stop',
-    domError: 'Stopped: NotebookLM UI structure did not match expectations',
-  },
-} as const
-
-export type MsgKey = keyof (typeof MESSAGES)['en']
+}
 
 export function detectLang(nav: { language: string } = navigator): Lang {
   return nav.language.toLowerCase().startsWith('ja') ? 'ja' : 'en'

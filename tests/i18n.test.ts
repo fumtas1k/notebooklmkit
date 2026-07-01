@@ -15,6 +15,13 @@ describe('i18n', () => {
     expect(te('deleteSelected', { count: 3 })).toContain('3')
   })
 
+  it('interpolates multiple variables', () => {
+    const t = createT('en')
+    const s = t('progress', { done: 1, total: 3 })
+    expect(s).toContain('1')
+    expect(s).toContain('3')
+  })
+
   it('falls back to the key when missing (never throws)', () => {
     const t = createT('en')
     // @ts-expect-error unknown key
