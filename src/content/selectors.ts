@@ -4,6 +4,7 @@ import type { RowIdentity } from '../types'
 export const SELECTORS = {
   row: 'project-table table.project-table tbody tr[mat-row][role="row"]',
   title: 'span.project-table-title',
+  titleCell: 'td.title-column',
   moreButton: 'project-action-button button.project-button-more',
   deleteMenuItem: '.cdk-overlay-container button.mat-mdc-menu-item.delete-button',
   confirmDialog: 'mat-dialog-container',
@@ -32,6 +33,12 @@ export function findRowByIdentity(id: RowIdentity, root: ParentNode = document):
 
 export function getMoreButton(row: HTMLElement): HTMLElement | null {
   return row.querySelector<HTMLElement>(SELECTORS.moreButton)
+}
+
+// チェックボックスを入れるホストセル（タイトル列）。新しい列を足すと
+// ヘッダー行とズレるため、既存のタイトルセル内に注入する。
+export function getTitleCell(row: HTMLElement): HTMLElement | null {
+  return row.querySelector<HTMLElement>(SELECTORS.titleCell)
 }
 
 export function getDeleteMenuItem(root: ParentNode = document): HTMLElement | null {

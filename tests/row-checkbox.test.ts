@@ -28,6 +28,28 @@ describe('injectRowCheckboxes', () => {
     expect(store.has('title:A')).toBe(true)
   })
 
+  it('injects into the existing title cell without adding a new column', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const row = document.querySelector('tr[mat-row]')!
+    // no extra <td> added: row still has exactly its original one cell
+    expect(row.querySelectorAll('td').length).toBe(1)
+    // checkbox lives inside the title cell, not as a sibling column
+    const titleCell = row.querySelector('td.title-column')!
+    expect(titleCell.querySelector(`[${CHECKBOX_ATTR}]`)).not.toBeNull()
+  })
+
+  it('does not let a checkbox click bubble to the row (avoids navigation)', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const row = document.querySelector('tr[mat-row]')!
+    let rowClicked = false
+    row.addEventListener('click', () => { rowClicked = true })
+    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    box.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(rowClicked).toBe(false)
+  })
+
   it('writes the row current key at event time, not a stale injection-time key', () => {
     const store = new SelectionStore()
     injectRowCheckboxes(store)
