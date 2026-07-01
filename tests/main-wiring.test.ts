@@ -154,4 +154,33 @@ describe('runDelete error recovery', () => {
     expect(progress!.textContent).toMatch(/中断しました|not processed/)
     expect(progress!.textContent).not.toMatch(/^完了|^Done/)
   })
+
+  it('ignores a re-entrant delete click while the confirm dialog is open', async () => {
+    // deleteNotebooks は呼ばれない想定だが、呼ばれても発散しないよう解決させておく
+    vi.mocked(deleteNotebooks).mockResolvedValue({
+      succeeded: [],
+      failed: [],
+      aborted: false,
+    })
+
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    init(root)
+    const checkbox = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
+    expect(checkbox).not.toBeNull()
+    checkbox!.checked = true
+    checkbox!.dispatchEvent(new Event('change'))
+
+    const deleteBtn = document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')
+
+    // 1 回目: 確認ダイアログが開く
+    deleteBtn!.click()
+    expect(document.querySelectorAll('[data-nlk="confirm-dialog"]').length).toBe(1)
+
+    // 確認ダイアログ表示中（await confirmDeletion の最中）に 2 回目を押す
+    deleteBtn!.click()
+
+    // 再入場ガードにより 2 つ目の runDelete は無視され、ダイアログは 1 つのまま
+    expect(document.querySelectorAll('[data-nlk="confirm-dialog"]').length).toBe(1)
+  })
 })
