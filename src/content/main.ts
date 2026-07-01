@@ -5,7 +5,7 @@ import {
 import { makeTarget, type NotebookTarget } from '../types'
 import { SelectionStore } from './selection'
 import { detectLang, createT } from './i18n'
-import { injectRowCheckboxes } from './ui/row-checkbox'
+import { injectRowCheckboxes, CHECKBOX_ATTR } from './ui/row-checkbox'
 import { mountActionBar } from './ui/action-bar'
 import { confirmDeletion } from './confirm-dialog'
 import { deleteNotebooks, type DeleterDeps } from './deleter'
@@ -53,26 +53,31 @@ export function init(root: ParentNode = document): void {
     const ac = new AbortController()
     currentAbort = ac
     bar.setBusy(true)
-    const deps: DeleterDeps = {
-      findRow: (tgt) => findRowByIdentity(tgt, root),
-      getMoreButton,
-      getDeleteMenuItem: () => getDeleteMenuItem(),
-      getConfirmDialog: () => getConfirmDialog(),
-      getConfirmDeleteButton,
-      click: (el) => { safeClick(el) },
-      waitFor,
+    try {
+      const deps: DeleterDeps = {
+        findRow: (tgt) => findRowByIdentity(tgt, root),
+        getMoreButton,
+        getDeleteMenuItem: () => getDeleteMenuItem(),
+        getConfirmDialog: () => getConfirmDialog(),
+        getConfirmDeleteButton,
+        click: (el) => { safeClick(el) },
+        waitFor,
+      }
+      const result = await deleteNotebooks(targets, deps, {
+        signal: ac.signal,
+        onProgress: (p) => bar.setProgress(t('progress', { done: p.completed, total: p.total })),
+      })
+      bar.setProgress(t('doneSummary', { ok: result.succeeded.length, ng: result.failed.length }))
+      // 成功分のみ選択解除
+      for (const key of result.succeeded) store.set(key, false)
+      syncCheckboxes(store, root)
+    } catch {
+      console.error('notebooklmkit: unexpected error during delete')
+      bar.setProgress(t('domError'))
+    } finally {
+      bar.setBusy(false)
+      currentAbort = null
     }
-    const result = await deleteNotebooks(targets, deps, {
-      signal: ac.signal,
-      onProgress: (p) => bar.setProgress(t('progress', { done: p.completed, total: p.total })),
-    })
-    bar.setBusy(false)
-    currentAbort = null
-    if (result.failed.length > 0) bar.setProgress(t('domError'))
-    else bar.setProgress(t('doneSummary', { ok: result.succeeded.length, ng: result.failed.length }))
-    // 成功分のみ選択解除
-    for (const key of result.succeeded) store.set(key, false)
-    syncCheckboxes(store, root)
   }
 
   // 一覧が再描画されたらチェックボックスを注入し直す
@@ -84,7 +89,7 @@ export function init(root: ParentNode = document): void {
 function syncCheckboxes(store: SelectionStore, root: ParentNode): void {
   for (const row of getNotebookRows(root)) {
     const key = makeTarget(getRowIdentity(row)).key
-    const box = row.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
     if (box) box.checked = store.has(key)
   }
 }
