@@ -65,6 +65,10 @@ describe('confirmDeletion (strong, type-to-confirm)', () => {
     ok.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     // guard should prevent resolution: overlay is still present, not cleaned up
     expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+    // 後片付け: pending の confirmDeletion を解決し、document キャプチャの
+    // keydown リスナーを残さない（以降のテストへのリーク防止）。
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
   })
 })
 

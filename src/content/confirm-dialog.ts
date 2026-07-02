@@ -89,7 +89,7 @@ export function confirmDeletion(opts: {
         ev.preventDefault()
         ev.stopPropagation()
         const els = Array.from(
-          box.querySelectorAll<HTMLElement>('button:not([disabled]), input'),
+          box.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled])'),
         )
         if (els.length === 0) return
         const idx = els.indexOf(document.activeElement as HTMLElement)
