@@ -13,6 +13,18 @@ import { waitFor, safeClick } from './dom-utils'
 
 export const VERSION = '0.1.0'
 
+// 一覧再スキャン observer の監視オプション（init 時と削除完了後 finally の
+// 再接続で共用。2箇所のオプションが乖離しないよう1箇所に集約する）。
+// characterData は Angular のインターポレーション更新（{{title}} は既存テキスト
+// ノードの nodeValue を書き換えるだけで childList レコードを出さない）に
+// リネームフロー等で追従するため（issue #28）。churn 増は row-checkbox.ts の
+// 「キー変化時のみ属性書き込み」ガード（PR #27）が吸収する。
+const LIST_OBSERVE_OPTIONS: MutationObserverInit = {
+  childList: true,
+  subtree: true,
+  characterData: true,
+}
+
 export function buildTargets(store: SelectionStore, root: ParentNode = document): NotebookTarget[] {
   const selected = new Set(store.keys())
   return getNotebookRows(root)
@@ -68,7 +80,7 @@ export function init(root: ParentNode = document): () => void {
   const observer = new MutationObserver(() => injectRowCheckboxes(store, root))
   const listContainer = root.querySelector('.all-projects-container')
   const container = listContainer ?? (root instanceof Document ? root.body : (root as Element)) ?? document.body
-  observer.observe(container, { childList: true, subtree: true })
+  observer.observe(container, LIST_OBSERVE_OPTIONS)
 
   async function runDelete(): Promise<void> {
     if (deleting) return
@@ -137,7 +149,7 @@ export function init(root: ParentNode = document): () => void {
         // ここで再度 observe されて再注入を続けてしまう（issue #16）。
         if (!disposed) {
           // 再スキャンを再開し、削除実行中に変化した行を一度だけ同期し直す。
-          observer.observe(container, { childList: true, subtree: true })
+          observer.observe(container, LIST_OBSERVE_OPTIONS)
           injectRowCheckboxes(store, root)
         }
       }
