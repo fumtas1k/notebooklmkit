@@ -26,6 +26,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
     if ((message as { type?: string } | null)?.type !== LIST_TABS_MESSAGE) return false
     // 要求元（NotebookLM タブ）と同じウィンドウのタブを返す
     const windowId = sender.tab?.windowId
+    // sender.tab が無い場合（popup などタブ以外のコンテキストからのメッセージ時）は現在のウィンドウにフォールバック
     const query = windowId !== undefined ? { windowId } : { currentWindow: true }
     chrome.tabs.query(query, (tabs) => sendResponse({ tabs: toImportableTabs(tabs) }))
     return true // sendResponse を非同期で呼ぶためチャネルを開いたままにする
