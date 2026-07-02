@@ -251,4 +251,111 @@ describe('runDelete error recovery', () => {
     document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
+
+  // issue #16: 削除処理が pending の間に init() の disposer が呼ばれると、
+  // deleteNotebooks の settle 時に内側 finally が破棄済み observer を復活させて
+  // しまう（現状 production では disposer 未保持のため到達不能だが、将来の SPA
+  // 遷移 teardown で顕在化する）。disposed フラグでガードされていることを検証する。
+  it('does not resurrect a disposed observer when delete settles after dispose', async () => {
+    const observeSpy = vi.spyOn(MutationObserver.prototype, 'observe')
+    let resolveDelete: (v: Awaited<ReturnType<typeof deleteNotebooks>>) => void = () => {}
+    vi.mocked(deleteNotebooks).mockImplementation(
+      () => new Promise((resolve) => { resolveDelete = resolve }),
+    )
+
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    const dispose = init(root)
+    const observeCallsAfterInit = observeSpy.mock.calls.length
+
+    const checkbox = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
+    expect(checkbox).not.toBeNull()
+    checkbox!.checked = true
+    checkbox!.dispatchEvent(new Event('change'))
+
+    const deleteBtn = document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')
+    deleteBtn!.click()
+    const okBtn = document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')
+    expect(okBtn).not.toBeNull()
+    okBtn!.click()
+
+    // runDelete が deleteNotebooks の呼び出しに到達し、pending な await で
+    // 止まるまでマイクロタスクをフラッシュする。
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // 削除が pending の間に dispose する（SPA 遷移 teardown のシミュレーション）。
+    dispose()
+
+    // pending だった削除処理を settle させる。
+    resolveDelete({ succeeded: ['title:A'], failed: [], aborted: false })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // dispose 後は内側 finally が observer を再 observe してはならない。
+    expect(observeSpy.mock.calls.length).toBe(observeCallsAfterInit)
+
+    observeSpy.mockRestore()
+  })
+
+  // issue #16: disposer は observer の復活を防ぐだけでなく、進行中の削除ループも
+  // abort しなければならない。abort しないと deleter が teardown 後も破壊的クリックを
+  // 打ち続け、Stop ボタンも消えて中断手段が無くなる。
+  it('aborts the in-flight delete when disposed mid-run', async () => {
+    let capturedSignal: AbortSignal | undefined
+    let resolveDelete: (v: Awaited<ReturnType<typeof deleteNotebooks>>) => void = () => {}
+    vi.mocked(deleteNotebooks).mockImplementation(
+      (_targets, _deps, opts) => {
+        capturedSignal = opts?.signal
+        return new Promise((resolve) => { resolveDelete = resolve })
+      },
+    )
+
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    const dispose = init(root)
+
+    const checkbox = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    checkbox.checked = true
+    checkbox.dispatchEvent(new Event('change'))
+
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(capturedSignal?.aborted).toBe(false)
+
+    // 削除が pending の間に dispose すると、渡した signal が abort されること。
+    dispose()
+    expect(capturedSignal?.aborted).toBe(true)
+
+    resolveDelete({ succeeded: [], failed: [], aborted: true })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  // レビュー第2ラウンド finding B: `await confirmDeletion` の待機中に dispose
+  // された場合、currentAbort はまだ null（confirm 後にしか代入されない）で
+  // no-op になるうえ、確認ダイアログは init 管理外の document.body に残るため
+  // teardown を生き延びる。dispose 後にユーザーが確定してしまうと、confirm 後に
+  // disposed を再チェックしていないと新品の AbortController で破壊的削除一式が
+  // 始まってしまう（issue #16 と同じハザード）。
+  it('does not start deleteNotebooks when disposed while the confirm dialog is still awaiting the user', async () => {
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    const dispose = init(root)
+
+    const checkbox = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    checkbox.checked = true
+    checkbox.dispatchEvent(new Event('change'))
+
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.click()
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+
+    // 確認ダイアログが確定されるより前に teardown される（SPA 遷移のシミュレーション）。
+    dispose()
+
+    // teardown 後にユーザー（または確定済みの Enter ハンドラ）がダイアログを確定する。
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(deleteNotebooks).not.toHaveBeenCalled()
+  })
 })

@@ -104,4 +104,118 @@ describe('injectRowCheckboxes', () => {
     expect(box.checked).toBe(true)
     expect(store.has('title:A')).toBe(true)
   })
+
+  // issue #25: Angular が <tr> を別ノートブックで再利用したとき、既存チェックボックスの
+  // aria-label / CHECKBOX_ATTR キーが再注入時に現在の identity へ同期されること。
+  it('re-syncs an existing checkbox aria-label and key when the row node is reused with a new title', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const row = document.querySelector('tr[mat-row]')!
+    // 行ノードが別ノートブックで再利用されるケースをシミュレート
+    row.querySelector('span.project-table-title')!.textContent = 'A-renamed'
+    injectRowCheckboxes(store)
+    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(box.getAttribute('aria-label')).toBe('A-renamed')
+    expect(box.getAttribute(CHECKBOX_ATTR)).toBe('title:A-renamed')
+    // 二重注入されないこと（既存の冪等性は維持）
+    expect(row.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(1)
+  })
+
+  // issue #25: 行の再利用に伴い checked（store 同期状態）も再注入のたびに更新されること。
+  it('re-syncs an existing checkbox checked state to match the store for the new identity', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const row = document.querySelector('tr[mat-row]')!
+    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    box.checked = true
+    box.dispatchEvent(new Event('change'))
+    expect(store.has('title:A')).toBe(true)
+
+    // 行が別タイトルで再利用され、そのタイトルは未選択
+    row.querySelector('span.project-table-title')!.textContent = 'C'
+    injectRowCheckboxes(store)
+    expect(box.checked).toBe(false)
+    expect(store.has('title:C')).toBe(false)
+  })
+
+  // レビュー第3ラウンド finding 1（issue #25 フォロー撤回）: フィルタタブ（すべて/
+  // マイ/おすすめ）切替で行が一時的に非表示（DOM から除去）になっても、選択は
+  // 消えないこと。observer tick での可視性ベース prune は「削除/リネームで消えた
+  // 行」と「フィルタタブで非表示になっただけの行」を区別できず、タブ往復で選択が
+  // 無言消失する回帰を生むため、prune 自体を撤去した。
+  it('does not prune a selection when its row is hidden (filter tab round-trip persists selection)', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const rows = document.querySelectorAll('tr[mat-row]')
+    const rowA = rows[0]
+    const boxA = rowA.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    boxA.checked = true
+    boxA.dispatchEvent(new Event('change'))
+    expect(store.has('title:A')).toBe(true)
+
+    // フィルタタブ切替をシミュレート: A の行がサブセット描画から消える（B は残る）
+    const tbody = rowA.parentElement!
+    tbody.removeChild(rowA)
+    injectRowCheckboxes(store)
+
+    // prune されず、選択は保持される
+    expect(store.has('title:A')).toBe(true)
+    expect(store.size).toBe(1)
+
+    // タブを戻す（A の行を再挿入）と選択表示が復元される
+    tbody.insertBefore(rowA, tbody.firstChild)
+    injectRowCheckboxes(store)
+    const restoredBoxA = rowA.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(restoredBoxA.checked).toBe(true)
+  })
+
+  // レビュー第2ラウンド finding A（S1）: 並び替えで先頭挿入が起きると、旧実装は
+  // 1 パス内でノード単位に prune するため、他行がそのキーを引き継ぐ前に消してしまい
+  // まだ存在する選択が無言で失われる。2 フェーズ reconcile ではこれを防ぐ。
+  it('keeps a selection alive across a reorder where another row inherits the key (S1)', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const rows = document.querySelectorAll('tr[mat-row]')
+    const node1 = rows[0]
+    const node2 = rows[1]
+    const box1 = node1.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    box1.checked = true
+    box1.dispatchEvent(new Event('change'))
+    expect(store.has('title:A')).toBe(true)
+
+    // 先頭挿入をシミュレート: node1 は新規ノートブック N、node2 が旧 A を引き継ぐ
+    node1.querySelector('span.project-table-title')!.textContent = 'N'
+    node2.querySelector('span.project-table-title')!.textContent = 'A'
+    injectRowCheckboxes(store)
+
+    expect(store.has('title:A')).toBe(true)
+    const box2 = node2.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(box2.checked).toBe(true)
+    const box1After = node1.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(box1After.checked).toBe(false)
+  })
+
+  // レビュー第2ラウンド finding A（S2）: シフトで表示だけチェックが残り件数が 0 になる
+  // （表示と件数の乖離）ケース。
+  it('keeps display and store count consistent across a shift (S2)', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const rows = document.querySelectorAll('tr[mat-row]')
+    const node1 = rows[0]
+    const node2 = rows[1]
+    const box2 = node2.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    box2.checked = true
+    box2.dispatchEvent(new Event('change'))
+    expect(store.has('title:B')).toBe(true)
+
+    // シフトをシミュレート: node1 が旧 B を引き継ぎ、node2 は新規 X になる
+    node1.querySelector('span.project-table-title')!.textContent = 'B'
+    node2.querySelector('span.project-table-title')!.textContent = 'X'
+    injectRowCheckboxes(store)
+
+    expect(store.has('title:B')).toBe(true)
+    expect(store.size).toBe(1)
+    const box1 = node1.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(box1.checked).toBe(true)
+  })
 })

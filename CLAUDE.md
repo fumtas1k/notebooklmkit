@@ -30,7 +30,7 @@ npx vitest run -t "aborts"             # 名前指定で単一テスト
 
 **セレクタは一箇所に集約。** NotebookLM の DOM セレクタはすべて `src/content/selectors.ts`（`SELECTORS` 定数）にある。NotebookLM の UI が変わったら、まずこのファイルを直す。セレクタは `docs/requirements.md` §8.5 に記録された実 DOM 調査に基づく。安定しているのは `mdc-*` / `mat-*`（Angular Material）。`ng-tns-*` / `_ngcontent-*`（動的生成）には**絶対に依存しない**。
 
-**行の識別はタイトルで行う（ID ではない）。** `src/types.ts` の `makeTarget()` が `title:<タイトル>` という選択キーを導出する。NotebookLM の行ごとの `jslog` 属性は全行で同一なので識別子に使えない。既知のエッジケース: 同名タイトル（例: 複数の「無題のノートブック」）は区別できず、片方を削除すると両方に影響し得る。
+**行の識別はタイトルで行う（ID ではない）。** `src/types.ts` の `makeTarget()` が `title:<タイトル>` という選択キーを導出する。NotebookLM の行ごとの `jslog` 属性は全行で同一なので識別子に使えない。既知のエッジケース: 同名タイトル（例: 複数の「無題のノートブック」）は区別できず、片方を削除すると両方に影響し得る。同様に、選択状態も title ベースのキーで保持するため、NotebookLM 側で削除/リネームされて一覧から消えた行の選択キーは `SelectionStore` に残留し得る（フィルタタブ切替で非表示になっただけの選択を保持するため、observer での可視性ベース prune を撤去したことのトレードオフ）。その結果、幽霊件数（選択件数表示はあるがチェック無し）・削除クリックの無言 no-op・後から同名タイトルを作った際の意図しないプリチェックが起こり得るが、`buildTargets` は可視行のみを対象とするため過剰削除は発生しない（「すべて解除」で復旧可能。詳細は issue #32 / #31）。
 
 **削除ロジックは依存性注入で DOM 非依存。** `src/content/deleter.ts`（`deleteNotebooks`）は `DeleterDeps` オブジェクト（findRow, getMoreButton, click, waitFor など）を受け取るため、実ページなしでシーケンス処理を単体テストできる。重要な不変条件:
 - 対象を先にすべて確定してから、**1件ずつ削除し、各行は再描画後に再検索する**（NotebookLM は削除のたびに一覧を再描画する）。

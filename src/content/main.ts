@@ -43,6 +43,9 @@ export function init(root: ParentNode = document): () => void {
 
   let currentAbort: AbortController | null = null
   let deleting = false
+  // 削除処理が pending の間に disposer が呼ばれた（＝ SPA 遷移などで teardown された）
+  // ことを内側 finally から判定するためのフラグ（issue #16）。
+  let disposed = false
 
   const bar = mountActionBar({
     store,
@@ -76,7 +79,13 @@ export function init(root: ParentNode = document): () => void {
       const totalRows = getNotebookRows(root).length
       const isSelectAll = targets.length === totalRows
       const ok = await confirmDeletion({ count: targets.length, isSelectAll, t })
-      if (!ok) return
+      // confirm 待機中に teardown された場合は、たとえ確定されても進めない。
+      // currentAbort は confirm 後にしか代入されないため待機中の dispose は
+      // no-op になり、確認ダイアログも init 管理外の document.body に残って
+      // teardown を生き延びる。ここで再チェックしないと、dispose 後に確定
+      // されたときに新品の AbortController で破壊的削除一式が始まってしまう
+      // （issue #16 と同じハザード / レビュー第2ラウンド finding B）。
+      if (!ok || disposed) return
       // confirm 表示中に選択・一覧が変化していれば中止する（issue #13）。
       // 削除は取り消し不可のため、古いスナップショットのまま進めない。
       // フォーカストラップ（confirm-dialog.ts）が主経路を塞ぎ、こちらはキー
@@ -123,9 +132,14 @@ export function init(root: ParentNode = document): () => void {
       } finally {
         bar.setBusy(false)
         currentAbort = null
-        // 再スキャンを再開し、削除実行中に変化した行を一度だけ同期し直す。
-        observer.observe(container, { childList: true, subtree: true })
-        injectRowCheckboxes(store, root)
+        // dispose 済み（disposer が呼ばれた）なら observer を復活させない。
+        // そうしないと、削除 pending 中に teardown された破棄済み observer が
+        // ここで再度 observe されて再注入を続けてしまう（issue #16）。
+        if (!disposed) {
+          // 再スキャンを再開し、削除実行中に変化した行を一度だけ同期し直す。
+          observer.observe(container, { childList: true, subtree: true })
+          injectRowCheckboxes(store, root)
+        }
       }
     } finally {
       deleting = false
@@ -133,6 +147,11 @@ export function init(root: ParentNode = document): () => void {
   }
 
   return () => {
+    disposed = true
+    // 進行中の削除ループも停止させる。abort しないと deleter は残りの確定ターゲット
+    // 全件へ破壊的クリックを teardown 後も打ち続け、しかも bar.destroy() で Stop
+    // ボタンごと消えるため中断手段が無くなる（取り消し不可の操作 / issue #16）。
+    currentAbort?.abort()
     observer.disconnect()
     bar.destroy()
   }
