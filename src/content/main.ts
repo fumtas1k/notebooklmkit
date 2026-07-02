@@ -43,6 +43,9 @@ export function init(root: ParentNode = document): () => void {
 
   let currentAbort: AbortController | null = null
   let deleting = false
+  // 削除処理が pending の間に disposer が呼ばれた（＝ SPA 遷移などで teardown された）
+  // ことを内側 finally から判定するためのフラグ（issue #16）。
+  let disposed = false
 
   const bar = mountActionBar({
     store,
@@ -123,9 +126,14 @@ export function init(root: ParentNode = document): () => void {
       } finally {
         bar.setBusy(false)
         currentAbort = null
-        // 再スキャンを再開し、削除実行中に変化した行を一度だけ同期し直す。
-        observer.observe(container, { childList: true, subtree: true })
-        injectRowCheckboxes(store, root)
+        // dispose 済み（disposer が呼ばれた）なら observer を復活させない。
+        // そうしないと、削除 pending 中に teardown された破棄済み observer が
+        // ここで再度 observe されて再注入を続けてしまう（issue #16）。
+        if (!disposed) {
+          // 再スキャンを再開し、削除実行中に変化した行を一度だけ同期し直す。
+          observer.observe(container, { childList: true, subtree: true })
+          injectRowCheckboxes(store, root)
+        }
       }
     } finally {
       deleting = false
@@ -133,6 +141,7 @@ export function init(root: ParentNode = document): () => void {
   }
 
   return () => {
+    disposed = true
     observer.disconnect()
     bar.destroy()
   }
