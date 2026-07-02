@@ -116,10 +116,20 @@ describe('confirmDeletion (a11y: escape / backdrop)', () => {
 describe('confirmDeletion (a11y: Enter to confirm)', () => {
   beforeEach(() => { document.body.innerHTML = '' })
 
-  it('Enter confirms a normal (small-count) dialog', async () => {
+  it('Enter confirms a normal (small-count) dialog when focus is not on Cancel', async () => {
     const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.focus()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     expect(await p).toBe(true)
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
+  })
+
+  it('Enter cancels (does not confirm) while the Cancel button has focus', async () => {
+    const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    // 通常ダイアログの初期フォーカスは Cancel
+    expect(document.activeElement).toBe(document.querySelector('[data-nlk="confirm-cancel"]'))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(await p).toBe(false)
     expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
   })
 
@@ -143,6 +153,7 @@ describe('confirmDeletion (keys do not leak to the page behind the modal)', () =
   it('stops Enter from bubbling past the dialog (normal dialog)', async () => {
     const p = confirmDeletion({ count: 3, isSelectAll: false, t })
     const box = document.querySelector<HTMLElement>('.nlk-dialog')!
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.focus()
 
     let bodyHeard = false
     document.body.addEventListener('keydown', () => { bodyHeard = true })
@@ -256,5 +267,50 @@ describe('confirmDeletion (focus trap: Tab stays inside the dialog)', () => {
     expect(bodyHeard).toBe(false)
     document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
     expect(await p).toBe(false)
+  })
+
+  it('pulls focus back to the first element (not the delete button) on Shift+Tab from outside', async () => {
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    outside.focus()
+    tab(true)
+    // 逆方向でも末尾（削除実行ボタン）ではなく先頭へ着地する
+    expect(document.activeElement)
+      .toBe(document.querySelector('[data-nlk="confirm-cancel"]'))
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
+    expect(await p).toBe(false)
+  })
+
+  it('lets modifier-key Tab combos pass through without moving focus', async () => {
+    const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    const cancel = document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!
+    expect(document.activeElement).toBe(cancel)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(cancel) // 横取りせず循環もしない
+    cancel.click()
+    expect(await p).toBe(false)
+  })
+})
+
+describe('confirmDeletion (IME composition keys are ignored)', () => {
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  it('does not confirm on Enter during IME composition', () => {
+    confirmDeletion({ count: 3, isSelectAll: false, t })
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.focus()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: true }))
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+    // 後片付け: リスナーを残さない
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
+  })
+
+  it('does not close on Escape during IME composition', () => {
+    confirmDeletion({ count: 12, isSelectAll: false, t })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, isComposing: true }))
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
   })
 })

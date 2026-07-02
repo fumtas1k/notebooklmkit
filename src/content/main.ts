@@ -79,10 +79,11 @@ export function init(root: ParentNode = document): () => void {
       if (!ok) return
       // confirm 表示中に選択・一覧が変化していれば中止する（issue #13）。
       // 削除は取り消し不可のため、古いスナップショットのまま進めない。
-      // フォーカストラップ（confirm-dialog.ts）が主経路を塞ぎ、これは最終安全網。
-      // 検証通過後は再計算した recheck を削除に使う（古いスナップショットを引き回さない）。
-      const recheck = buildTargets(store, root)
-      if (!sameTargetKeys(targets, recheck)) {
+      // フォーカストラップ（confirm-dialog.ts）が主経路を塞ぎ、こちらはキー
+      // 多重集合レベルの安全網（同名タイトルの置換までは検出できない ——
+      // タイトル識別の既知の制約。types.ts 参照）。検証通過後は確認時の順序を
+      // 保つため targets をそのまま使う。
+      if (!sameTargetKeys(targets, buildTargets(store, root))) {
         bar.setProgress(t('selectionChanged'))
         return
       }
@@ -103,12 +104,12 @@ export function init(root: ParentNode = document): () => void {
           click: (el) => { safeClick(el) },
           waitFor,
         }
-        const result = await deleteNotebooks(recheck, deps, {
+        const result = await deleteNotebooks(targets, deps, {
           signal: ac.signal,
           onProgress: (p) => bar.setProgress(t('progress', { done: p.completed, total: p.total })),
         })
         if (result.aborted) {
-          const rest = recheck.length - result.succeeded.length - result.failed.length
+          const rest = targets.length - result.succeeded.length - result.failed.length
           bar.setProgress(t('abortedSummary', { ok: result.succeeded.length, rest }))
         } else {
           bar.setProgress(t('doneSummary', { ok: result.succeeded.length, ng: result.failed.length }))
