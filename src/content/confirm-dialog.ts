@@ -82,10 +82,12 @@ export function confirmDeletion(opts: {
       resolve(result)
     }
     const onKeydown = (ev: KeyboardEvent) => {
-      // IME 変換中のキー（変換確定の Enter / 変換キャンセルの Escape 等）は
-      // ダイアログ操作として扱わない（keyCode 229 は Chrome の IME 経由キー）。
-      if (ev.isComposing || ev.keyCode === 229) return
+      // IME 変換中の Enter / Escape（変換確定・変換キャンセル）はダイアログ
+      // 操作として扱わない（keyCode 229 は Chrome の IME 経由キー）。Tab には
+      // 適用しない —— 変換中でもトラップを維持し、フォーカス脱出を防ぐ。
+      const composing = ev.isComposing || ev.keyCode === 229
       if (ev.key === 'Escape') {
+        if (composing) return
         ev.preventDefault()
         ev.stopPropagation()
         cleanup(false)
@@ -112,16 +114,21 @@ export function confirmDeletion(opts: {
         return
       }
       if (ev.key === 'Enter') {
+        if (composing) return
         // ダイアログ表示中の Enter は、バブリング経路とこのリスナーより後に
         // 登録されたリスナーへは漏らさない（先行登録の document / window
         // キャプチャには届き得る）。フォーカス中のボタンの意図を尊重し、
         // Cancel フォーカス時はキャンセルとして扱う。
         ev.preventDefault()
         ev.stopPropagation()
-        if (document.activeElement === cancel) {
+        const active = document.activeElement
+        if (active === cancel) {
           cleanup(false)
           return
         }
+        // フォーカスがダイアログ外へ逃げている間の Enter は確定にしない
+        // （取り消し不可の削除のため安全側。Tab で引き戻してから操作する）。
+        if (active instanceof HTMLElement && !box.contains(active)) return
         if (strong && !isConfirmInputValid(input!.value, count)) return
         cleanup(true)
       }

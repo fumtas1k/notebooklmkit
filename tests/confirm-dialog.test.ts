@@ -145,6 +145,19 @@ describe('confirmDeletion (a11y: Enter to confirm)', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     expect(await p).toBe(true)
   })
+
+  it('does not confirm on Enter while focus is outside the dialog', () => {
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    confirmDeletion({ count: 3, isSelectAll: false, t })
+    outside.focus()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    // 脱出状態の Enter で確定しない（ダイアログは開いたまま）
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+    // 後片付け: リスナーを残さない
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
+  })
 })
 
 describe('confirmDeletion (keys do not leak to the page behind the modal)', () => {
@@ -312,5 +325,15 @@ describe('confirmDeletion (IME composition keys are ignored)', () => {
     expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
+  })
+
+  it('keeps the Tab trap active during IME composition', async () => {
+    const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    const ok = document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!
+    // 変換中でも Tab はトラップされ、ダイアログ内で循環する（脱出しない）
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true, isComposing: true }))
+    expect(document.activeElement).toBe(ok)
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
+    expect(await p).toBe(false)
   })
 })
