@@ -138,25 +138,35 @@ describe('injectRowCheckboxes', () => {
     expect(store.has('title:C')).toBe(false)
   })
 
-  // issue #25 フォロー: 行が別ノートブックへ付け替えられたとき、旧キーを store から
-  // 掃除して「表示は未チェックなのに件数だけ残る」幽霊選択を残さないこと。
-  it('prunes the stale old key from the store when a selected row is reused with a new title', () => {
+  // レビュー第3ラウンド finding 1（issue #25 フォロー撤回）: フィルタタブ（すべて/
+  // マイ/おすすめ）切替で行が一時的に非表示（DOM から除去）になっても、選択は
+  // 消えないこと。observer tick での可視性ベース prune は「削除/リネームで消えた
+  // 行」と「フィルタタブで非表示になっただけの行」を区別できず、タブ往復で選択が
+  // 無言消失する回帰を生むため、prune 自体を撤去した。
+  it('does not prune a selection when its row is hidden (filter tab round-trip persists selection)', () => {
     const store = new SelectionStore()
     injectRowCheckboxes(store)
-    const row = document.querySelector('tr[mat-row]')!
-    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
-    box.checked = true
-    box.dispatchEvent(new Event('change'))
-    expect(store.size).toBe(1)
+    const rows = document.querySelectorAll('tr[mat-row]')
+    const rowA = rows[0]
+    const boxA = rowA.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    boxA.checked = true
+    boxA.dispatchEvent(new Event('change'))
+    expect(store.has('title:A')).toBe(true)
 
-    // この行ノードが別ノートブック（未選択の C）へ付け替えられる
-    row.querySelector('span.project-table-title')!.textContent = 'C'
+    // フィルタタブ切替をシミュレート: A の行がサブセット描画から消える（B は残る）
+    const tbody = rowA.parentElement!
+    tbody.removeChild(rowA)
     injectRowCheckboxes(store)
 
-    // 旧キー title:A は残らず、幽霊選択（件数だけ 1）にならない
-    expect(store.has('title:A')).toBe(false)
-    expect(store.size).toBe(0)
-    expect(box.checked).toBe(false)
+    // prune されず、選択は保持される
+    expect(store.has('title:A')).toBe(true)
+    expect(store.size).toBe(1)
+
+    // タブを戻す（A の行を再挿入）と選択表示が復元される
+    tbody.insertBefore(rowA, tbody.firstChild)
+    injectRowCheckboxes(store)
+    const restoredBoxA = rowA.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(restoredBoxA.checked).toBe(true)
   })
 
   // レビュー第2ラウンド finding A（S1）: 並び替えで先頭挿入が起きると、旧実装は
@@ -207,24 +217,5 @@ describe('injectRowCheckboxes', () => {
     expect(store.size).toBe(1)
     const box1 = node1.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
     expect(box1.checked).toBe(true)
-  })
-
-  // レビュー第2ラウンド finding A: 描画途中（タイトル span が未充填の行がある）は
-  // 間引きパスを見送り、選択を壊さないこと。
-  it('does not prune while a row is mid-render (empty title span)', () => {
-    const store = new SelectionStore()
-    injectRowCheckboxes(store)
-    const row = document.querySelector('tr[mat-row]')!
-    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
-    box.checked = true
-    box.dispatchEvent(new Event('change'))
-    expect(store.has('title:A')).toBe(true)
-
-    // もう一方の行のタイトル span がまだ空（Angular が描画中）
-    const otherRow = document.querySelectorAll('tr[mat-row]')[1]
-    otherRow.querySelector('span.project-table-title')!.textContent = ''
-    injectRowCheckboxes(store)
-
-    expect(store.has('title:A')).toBe(true)
   })
 })
