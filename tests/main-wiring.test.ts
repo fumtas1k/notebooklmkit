@@ -359,3 +359,73 @@ describe('runDelete error recovery', () => {
     expect(deleteNotebooks).not.toHaveBeenCalled()
   })
 })
+
+// issue #28: Angular のインターポレーション更新（{{title}}）は既存テキストノードの
+// nodeValue を書き換えるだけで childList レコードを出さない。characterData を
+// 監視しないと、リネームフロー（メニュー/ダイアログは監視対象コンテナ外の
+// .cdk-overlay-container に出る）でチェックボックスのキー / aria-label / checked が
+// stale なまま残る。
+describe('observer characterData tracking (issue #28)', () => {
+  beforeEach(() => {
+    vi.mocked(deleteNotebooks).mockReset()
+  })
+
+  it('re-syncs checkbox key / aria-label / checked when a title text node is rewritten in place', async () => {
+    // Detached root: 同ファイル内の他テストと同じ理由（古い MutationObserver との競合回避）。
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    const dispose = init(root)
+
+    const row = root.querySelector('tr[mat-row]')!
+    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    box.checked = true
+    box.dispatchEvent(new Event('change'))
+
+    // リネームをシミュレート: 既存テキストノードの nodeValue のみを書き換える
+    // （span.textContent への代入はテキストノード置換＝ childList レコードに
+    // なってしまうため、ここでは使わない）。
+    const textNode = row.querySelector('span.project-table-title')!.firstChild as Text
+    textNode.nodeValue = 'A-renamed'
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(box.getAttribute(CHECKBOX_ATTR)).toBe('title:A-renamed')
+    expect(box.getAttribute('aria-label')).toBe('A-renamed')
+    // 新タイトルのキーは未選択のため checked も追従して外れる
+    // （旧キー title:A はストアに残留する。既知の title 識別トレードオフ）。
+    expect(box.checked).toBe(false)
+
+    dispose()
+  })
+
+  it('still re-syncs an in-place title rewrite after a delete completes (finally re-attach includes characterData)', async () => {
+    vi.mocked(deleteNotebooks).mockResolvedValue({ succeeded: ['title:A'], failed: [], aborted: false })
+
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    const dispose = init(root)
+
+    const checkbox = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    checkbox.checked = true
+    checkbox.dispatchEvent(new Event('change'))
+
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // 削除完了後（finally で observer 再接続済み）に、削除に関与していない行 B の
+    // タイトルをその場（nodeValue）で書き換える。再接続が characterData 込みで
+    // なければこのリネームは観測されず stale なまま残るため、振る舞いとして
+    // 「finally の再接続オプション」を検証できる（スパイ・呼び出し回数への結合を
+    // 避ける。オプション2箇所の乖離防止は LIST_OBSERVE_OPTIONS 定数化が担保）。
+    const rowB = root.querySelectorAll('tr[mat-row]')[1]!
+    const boxB = rowB.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    const textNode = rowB.querySelector('span.project-table-title')!.firstChild as Text
+    textNode.nodeValue = 'B-renamed'
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(boxB.getAttribute(CHECKBOX_ATTR)).toBe('title:B-renamed')
+    expect(boxB.getAttribute('aria-label')).toBe('B-renamed')
+
+    dispose()
+  })
+})

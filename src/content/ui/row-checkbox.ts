@@ -7,7 +7,13 @@ export const CHECKBOX_ATTR = 'data-nlk-checkbox'
 
 export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = document): void {
   for (const row of getNotebookRows(root)) {
-    const target = makeTarget(getRowIdentity(row))
+    const identity = getRowIdentity(row)
+    // 行挿入直後でタイトル span が未充填の行はスキップする。空キー `title:` /
+    // aria-label="" を書き込まないため（issue #28 補足）。スキップしても、
+    // タイトル充填時の characterData / childList 変化で observer が再発火し、
+    // そこで注入・同期される。
+    if (!identity.title) continue
+    const target = makeTarget(identity)
     const existing = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
     if (existing) {
       // 行ノードが Angular によって別ノートブックで再利用され得るため、既存の
