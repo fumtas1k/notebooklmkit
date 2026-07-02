@@ -218,4 +218,41 @@ describe('injectRowCheckboxes', () => {
     const box1 = node1.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
     expect(box1.checked).toBe(true)
   })
+
+  // issue #28 補足: 行挿入とタイトル span 充填の間に observer が発火すると
+  // identity が空文字になり、空キー `title:` / aria-label="" が書き込まれてしまう。
+  // タイトル未充填の行は注入自体をスキップする（充填時の mutation で再発火して注入される）。
+  it('does not inject a checkbox into a row whose title is still empty (issue #28)', () => {
+    const store = new SelectionStore()
+    document.body.innerHTML = `
+    <project-table><table class="project-table"><tbody>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title"></span></td></tr>
+    </tbody></table></project-table>`
+    injectRowCheckboxes(store)
+    expect(document.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(0)
+
+    // タイトル充填後の再実行（observer 再発火のシミュレート）で通常どおり注入される
+    document.querySelector('span.project-table-title')!.textContent = 'A'
+    injectRowCheckboxes(store)
+    const box = document.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(box.getAttribute(CHECKBOX_ATTR)).toBe('title:A')
+    expect(box.getAttribute('aria-label')).toBe('A')
+  })
+
+  // issue #28 補足: 既存チェックボックスのある行のタイトルが一時的に空になっても、
+  // 空キー `title:` / aria-label="" で上書きしない（同期もスキップ）。
+  it('does not stamp an empty key onto an existing checkbox while the title is transiently empty (issue #28)', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const row = document.querySelector('tr[mat-row]')!
+    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    box.checked = true
+    box.dispatchEvent(new Event('change'))
+
+    row.querySelector('span.project-table-title')!.textContent = ''
+    injectRowCheckboxes(store)
+    expect(box.getAttribute(CHECKBOX_ATTR)).toBe('title:A')
+    expect(box.getAttribute('aria-label')).toBe('A')
+    expect(box.checked).toBe(true)
+  })
 })
