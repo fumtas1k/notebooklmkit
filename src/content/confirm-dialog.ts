@@ -128,7 +128,8 @@ export function confirmDeletion(opts: {
         }
         // フォーカスがダイアログ外へ逃げている間の Enter は確定にしない
         // （取り消し不可の削除のため安全側。Tab で引き戻してから操作する）。
-        if (active instanceof HTMLElement && !box.contains(active)) return
+        // contains(null) は false のため、activeElement が null / SVG でも確定しない。
+        if (!box.contains(active)) return
         if (strong && !isConfirmInputValid(input!.value, count)) return
         cleanup(true)
       }
