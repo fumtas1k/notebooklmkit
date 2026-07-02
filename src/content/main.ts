@@ -17,8 +17,9 @@ export const VERSION = '0.1.0'
 // 再接続で共用。2箇所のオプションが乖離しないよう1箇所に集約する）。
 // characterData は Angular のインターポレーション更新（{{title}} は既存テキスト
 // ノードの nodeValue を書き換えるだけで childList レコードを出さない）に
-// リネームフロー等で追従するため（issue #28）。churn 増は row-checkbox.ts の
-// 「キー変化時のみ属性書き込み」ガード（PR #27）が吸収する。
+// リネームフロー等で追従するため（issue #28）。churn 増のうち属性書き込みは
+// row-checkbox.ts の「キー変化時のみ書き込み」ガード（PR #27）が抑制する
+// （読み取りスキャン＋ checked 代入は毎発火走るが O(行数) で有界）。
 const LIST_OBSERVE_OPTIONS: MutationObserverInit = {
   childList: true,
   subtree: true,

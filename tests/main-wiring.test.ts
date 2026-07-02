@@ -397,14 +397,12 @@ describe('observer characterData tracking (issue #28)', () => {
     dispose()
   })
 
-  it('re-observes with characterData after a delete completes (finally path)', async () => {
-    const observeSpy = vi.spyOn(MutationObserver.prototype, 'observe')
+  it('still re-syncs an in-place title rewrite after a delete completes (finally re-attach includes characterData)', async () => {
     vi.mocked(deleteNotebooks).mockResolvedValue({ succeeded: ['title:A'], failed: [], aborted: false })
 
     const root = document.createElement('div')
     root.innerHTML = LIST
     const dispose = init(root)
-    const observeCallsAfterInit = observeSpy.mock.calls.length
 
     const checkbox = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
     checkbox.checked = true
@@ -414,13 +412,20 @@ describe('observer characterData tracking (issue #28)', () => {
     document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    // 削除完了後の finally で1回だけ再接続され、init 時と同じオプション
-    // （characterData 込み）で observe されること。
-    expect(observeSpy.mock.calls.length).toBe(observeCallsAfterInit + 1)
-    const [, options] = observeSpy.mock.calls[observeSpy.mock.calls.length - 1]!
-    expect(options).toMatchObject({ childList: true, subtree: true, characterData: true })
+    // 削除完了後（finally で observer 再接続済み）に、削除に関与していない行 B の
+    // タイトルをその場（nodeValue）で書き換える。再接続が characterData 込みで
+    // なければこのリネームは観測されず stale なまま残るため、振る舞いとして
+    // 「finally の再接続オプション」を検証できる（スパイ・呼び出し回数への結合を
+    // 避ける。オプション2箇所の乖離防止は LIST_OBSERVE_OPTIONS 定数化が担保）。
+    const rowB = root.querySelectorAll('tr[mat-row]')[1]!
+    const boxB = rowB.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    const textNode = rowB.querySelector('span.project-table-title')!.firstChild as Text
+    textNode.nodeValue = 'B-renamed'
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(boxB.getAttribute(CHECKBOX_ATTR)).toBe('title:B-renamed')
+    expect(boxB.getAttribute('aria-label')).toBe('B-renamed')
 
     dispose()
-    observeSpy.mockRestore()
   })
 })
