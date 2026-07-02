@@ -92,8 +92,8 @@ export function init(root: ParentNode = document): () => void {
         // 成功分のみ選択解除
         for (const key of result.succeeded) store.set(key, false)
         syncCheckboxes(store, root)
-      } catch {
-        console.error('notebooklmkit: unexpected error during delete')
+      } catch (err) {
+        console.error('notebooklmkit: unexpected error during delete', err)
         bar.setProgress(t('domError'))
       } finally {
         bar.setBusy(false)
