@@ -104,4 +104,37 @@ describe('injectRowCheckboxes', () => {
     expect(box.checked).toBe(true)
     expect(store.has('title:A')).toBe(true)
   })
+
+  // issue #25: Angular が <tr> を別ノートブックで再利用したとき、既存チェックボックスの
+  // aria-label / CHECKBOX_ATTR キーが再注入時に現在の identity へ同期されること。
+  it('re-syncs an existing checkbox aria-label and key when the row node is reused with a new title', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const row = document.querySelector('tr[mat-row]')!
+    // 行ノードが別ノートブックで再利用されるケースをシミュレート
+    row.querySelector('span.project-table-title')!.textContent = 'A-renamed'
+    injectRowCheckboxes(store)
+    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(box.getAttribute('aria-label')).toBe('A-renamed')
+    expect(box.getAttribute(CHECKBOX_ATTR)).toBe('title:A-renamed')
+    // 二重注入されないこと（既存の冪等性は維持）
+    expect(row.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(1)
+  })
+
+  // issue #25: 行の再利用に伴い checked（store 同期状態）も再注入のたびに更新されること。
+  it('re-syncs an existing checkbox checked state to match the store for the new identity', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const row = document.querySelector('tr[mat-row]')!
+    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    box.checked = true
+    box.dispatchEvent(new Event('change'))
+    expect(store.has('title:A')).toBe(true)
+
+    // 行が別タイトルで再利用され、そのタイトルは未選択
+    row.querySelector('span.project-table-title')!.textContent = 'C'
+    injectRowCheckboxes(store)
+    expect(box.checked).toBe(false)
+    expect(store.has('title:C')).toBe(false)
+  })
 })

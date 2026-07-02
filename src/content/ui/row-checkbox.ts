@@ -7,7 +7,17 @@ export const CHECKBOX_ATTR = 'data-nlk-checkbox'
 
 export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = document): void {
   for (const row of getNotebookRows(root)) {
-    if (row.querySelector(`[${CHECKBOX_ATTR}]`)) continue // 冪等
+    const existing = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
+    if (existing) {
+      // 行ノードが Angular によって別ノートブックで再利用され得るため、既存の
+      // チェックボックスも毎回現在の identity へ同期する（checked / aria-label /
+      // キー属性が陳腐化して SelectionStore や読み上げとズレるのを防ぐ / issue #25）。
+      const target = makeTarget(getRowIdentity(row))
+      existing.setAttribute(CHECKBOX_ATTR, target.key)
+      existing.setAttribute('aria-label', target.title)
+      existing.checked = store.has(target.key)
+      continue
+    }
     // 新しい <td> を足すと列数がヘッダー行とズレるため、既存のタイトルセル内に入れる。
     const host = getTitleCell(row) ?? row.querySelector('td')
     if (!host) continue
