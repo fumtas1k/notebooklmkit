@@ -27,6 +27,7 @@ export function init(root: ParentNode = document): () => void {
   injectRowCheckboxes(store, root)
 
   let currentAbort: AbortController | null = null
+  let deleting = false
 
   const bar = mountActionBar({
     store,
@@ -52,51 +53,57 @@ export function init(root: ParentNode = document): () => void {
   observer.observe(container, { childList: true, subtree: true })
 
   async function runDelete(): Promise<void> {
-    const targets = buildTargets(store, root)
-    if (targets.length === 0) return
-    const totalRows = getNotebookRows(root).length
-    const isSelectAll = targets.length === totalRows
-    const ok = await confirmDeletion({ count: targets.length, isSelectAll, t })
-    if (!ok) return
-
-    const ac = new AbortController()
-    currentAbort = ac
-    // 削除中は自分たちで行を書き換える（＝一覧を大量に mutate する）ため、
-    // 再スキャン observer を止めて O(n^2) の無駄な再注入を避ける。
-    observer.disconnect()
-    bar.setBusy(true)
+    if (deleting) return
+    deleting = true
     try {
-      const deps: DeleterDeps = {
-        findRow: (tgt) => findRowByIdentity(tgt, root),
-        getMoreButton,
-        getDeleteMenuItem: () => getDeleteMenuItem(),
-        getConfirmDialog: () => getConfirmDialog(),
-        getConfirmDeleteButton,
-        click: (el) => { safeClick(el) },
-        waitFor,
+      const targets = buildTargets(store, root)
+      if (targets.length === 0) return
+      const totalRows = getNotebookRows(root).length
+      const isSelectAll = targets.length === totalRows
+      const ok = await confirmDeletion({ count: targets.length, isSelectAll, t })
+      if (!ok) return
+
+      const ac = new AbortController()
+      currentAbort = ac
+      // 削除中は自分たちで行を書き換える（＝一覧を大量に mutate する）ため、
+      // 再スキャン observer を止めて O(n^2) の無駄な再注入を避ける。
+      observer.disconnect()
+      bar.setBusy(true)
+      try {
+        const deps: DeleterDeps = {
+          findRow: (tgt) => findRowByIdentity(tgt, root),
+          getMoreButton,
+          getDeleteMenuItem: () => getDeleteMenuItem(),
+          getConfirmDialog: () => getConfirmDialog(),
+          getConfirmDeleteButton,
+          click: (el) => { safeClick(el) },
+          waitFor,
+        }
+        const result = await deleteNotebooks(targets, deps, {
+          signal: ac.signal,
+          onProgress: (p) => bar.setProgress(t('progress', { done: p.completed, total: p.total })),
+        })
+        if (result.aborted) {
+          const rest = targets.length - result.succeeded.length - result.failed.length
+          bar.setProgress(t('abortedSummary', { ok: result.succeeded.length, rest }))
+        } else {
+          bar.setProgress(t('doneSummary', { ok: result.succeeded.length, ng: result.failed.length }))
+        }
+        // 成功分のみ選択解除
+        for (const key of result.succeeded) store.set(key, false)
+        syncCheckboxes(store, root)
+      } catch (err) {
+        console.error('notebooklmkit: unexpected error during delete', err)
+        bar.setProgress(t('domError'))
+      } finally {
+        bar.setBusy(false)
+        currentAbort = null
+        // 再スキャンを再開し、削除実行中に変化した行を一度だけ同期し直す。
+        observer.observe(container, { childList: true, subtree: true })
+        injectRowCheckboxes(store, root)
       }
-      const result = await deleteNotebooks(targets, deps, {
-        signal: ac.signal,
-        onProgress: (p) => bar.setProgress(t('progress', { done: p.completed, total: p.total })),
-      })
-      if (result.aborted) {
-        const rest = targets.length - result.succeeded.length - result.failed.length
-        bar.setProgress(t('abortedSummary', { ok: result.succeeded.length, rest }))
-      } else {
-        bar.setProgress(t('doneSummary', { ok: result.succeeded.length, ng: result.failed.length }))
-      }
-      // 成功分のみ選択解除
-      for (const key of result.succeeded) store.set(key, false)
-      syncCheckboxes(store, root)
-    } catch {
-      console.error('notebooklmkit: unexpected error during delete')
-      bar.setProgress(t('domError'))
     } finally {
-      bar.setBusy(false)
-      currentAbort = null
-      // 再スキャンを再開し、削除実行中に変化した行を一度だけ同期し直す。
-      observer.observe(container, { childList: true, subtree: true })
-      injectRowCheckboxes(store, root)
+      deleting = false
     }
   }
 

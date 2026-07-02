@@ -154,4 +154,45 @@ describe('runDelete error recovery', () => {
     expect(progress!.textContent).toMatch(/中断しました|not processed/)
     expect(progress!.textContent).not.toMatch(/^完了|^Done/)
   })
+
+  it('ignores a re-entrant delete click while the confirm dialog is open', async () => {
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    init(root)
+    const checkbox = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
+    expect(checkbox).not.toBeNull()
+    checkbox!.checked = true
+    checkbox!.dispatchEvent(new Event('change'))
+
+    const deleteBtn = document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')
+
+    // 1 回目: 確認ダイアログが開く
+    deleteBtn!.click()
+    expect(document.querySelectorAll('[data-nlk="confirm-dialog"]').length).toBe(1)
+
+    // 確認ダイアログ表示中（await confirmDeletion の最中）に 2 回目を押す
+    deleteBtn!.click()
+
+    // 再入場ガードにより 2 つ目の runDelete は無視され、ダイアログは 1 つのまま
+    expect(document.querySelectorAll('[data-nlk="confirm-dialog"]').length).toBe(1)
+    // どちらの runDelete も confirm を通過していないため削除は開始されない。
+    // deleteNotebooks は beforeEach の mockReset で inert のまま。成功モックで
+    // 退行（ガードが壊れて再入場が deleteNotebooks に到達する）を隠さない。
+    expect(deleteNotebooks).not.toHaveBeenCalled()
+
+    // ダイアログをキャンセルして pending な confirmDeletion を解決させ、
+    // overlay / document キャプチャリスナーのリークを防ぐ。あわせて外側
+    // finally の `deleting = false` リセット経路を、再度削除を開始できる
+    // （新しいダイアログが開く）ことで検証する。
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(document.querySelectorAll('[data-nlk="confirm-dialog"]').length).toBe(0)
+
+    deleteBtn!.click()
+    expect(document.querySelectorAll('[data-nlk="confirm-dialog"]').length).toBe(1)
+
+    // 後片付け: 開いたダイアログを閉じ、overlay / リスナーを残さない。
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
 })
