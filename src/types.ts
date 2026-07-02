@@ -25,3 +25,25 @@ export interface DeleteResult {
 export function makeTarget(id: RowIdentity): NotebookTarget {
   return { ...id, key: `title:${id.title}` }
 }
+
+export interface ImportProgress {
+  total: number
+  completed: number
+  failed: number
+  currentUrl?: string
+}
+
+export interface ImportResult {
+  succeeded: string[]
+  failed: { url: string; reason: string }[]
+  aborted: boolean
+}
+
+// background の chrome.tabs.query 結果から content に渡すタブ情報。
+export interface TabInfo {
+  title: string
+  url: string
+}
+
+// content ↔ background 間の「タブ一覧をくれ」メッセージ種別。
+export const LIST_TABS_MESSAGE = 'nlk:list-tabs'
