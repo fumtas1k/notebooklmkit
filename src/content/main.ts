@@ -77,6 +77,14 @@ export function init(root: ParentNode = document): () => void {
       const isSelectAll = targets.length === totalRows
       const ok = await confirmDeletion({ count: targets.length, isSelectAll, t })
       if (!ok) return
+      // confirm 表示中に選択・一覧が変化していれば中止する（issue #13）。
+      // 削除は取り消し不可のため、古いスナップショットのまま進めない。
+      // フォーカストラップ（confirm-dialog.ts）が主経路を塞ぎ、これは最終安全網。
+      const recheck = buildTargets(store, root)
+      if (!sameTargetKeys(targets, recheck)) {
+        bar.setProgress(t('selectionChanged'))
+        return
+      }
 
       const ac = new AbortController()
       currentAbort = ac

@@ -218,4 +218,37 @@ describe('runDelete error recovery', () => {
     document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
+
+  it('aborts without deleting when the selection changed while the confirm dialog was open', async () => {
+    // Detached root: 同 describe 内の他テストと同じ理由（古い MutationObserver との競合回避）。
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    init(root)
+    const boxes = root.querySelectorAll<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
+    expect(boxes.length).toBe(2)
+    boxes[0].checked = true
+    boxes[0].dispatchEvent(new Event('change'))
+
+    const deleteBtn = document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')
+    deleteBtn!.click()
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+
+    // 確認ダイアログ表示中に背後の選択を変更する（issue #13 の割り込み経路を再現）
+    boxes[1].checked = true
+    boxes[1].dispatchEvent(new Event('change'))
+
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // 古いスナップショットのまま削除に進んではならない
+    expect(deleteNotebooks).not.toHaveBeenCalled()
+    const progress = document.querySelector('[data-nlk="bar-progress"]')
+    expect(progress!.textContent).toMatch(/選択が変更された|selection changed/)
+
+    // 中止後は deleting フラグが解除され、再度削除を開始できる
+    deleteBtn!.click()
+    expect(document.querySelectorAll('[data-nlk="confirm-dialog"]').length).toBe(1)
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
 })
