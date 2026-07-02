@@ -81,6 +81,18 @@ describe('injectRowCheckboxes', () => {
     expect(rowClicked).toBe(false)
   })
 
+  it('fires change exactly once on a direct input click (no label re-activation cancelling the toggle)', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const box = document.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    let changeCount = 0
+    box.addEventListener('change', () => { changeCount++ })
+    box.click()
+    expect(changeCount).toBe(1)
+    expect(box.checked).toBe(true)
+    expect(store.has('title:A')).toBe(true)
+  })
+
   it('toggles the checkbox and the selection store via a click on the label hit area', () => {
     const store = new SelectionStore()
     injectRowCheckboxes(store)
