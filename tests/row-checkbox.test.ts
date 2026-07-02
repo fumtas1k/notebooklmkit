@@ -69,4 +69,27 @@ describe('injectRowCheckboxes', () => {
     expect(store.has('title:A-renamed')).toBe(true)
     expect(store.has('title:A')).toBe(false)
   })
+
+  it('does not let a click on the label hit area bubble to the row (avoids navigation)', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const row = document.querySelector('tr[mat-row]')!
+    let rowClicked = false
+    row.addEventListener('click', () => { rowClicked = true })
+    const label = row.querySelector<HTMLLabelElement>('label[data-nlk="checkbox-hit"]')!
+    label.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(rowClicked).toBe(false)
+  })
+
+  it('toggles the checkbox and the selection store via a click on the label hit area', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const row = document.querySelector('tr[mat-row]')!
+    const label = row.querySelector<HTMLLabelElement>('label[data-nlk="checkbox-hit"]')!
+    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(box.checked).toBe(false)
+    label.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(box.checked).toBe(true)
+    expect(store.has('title:A')).toBe(true)
+  })
 })
