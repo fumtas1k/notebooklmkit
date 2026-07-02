@@ -92,6 +92,15 @@ describe('importUrls', () => {
     expect(res.failed[0].url).toBe(URLS[0])
   })
 
+  it('resolves immediately with an empty result for empty input', async () => {
+    const { deps } = makeWorld()
+    const progress = vi.fn()
+    const res = await importUrls([], deps, { onProgress: progress })
+    expect(res).toEqual({ succeeded: [], failed: [], aborted: false })
+    expect(progress).toHaveBeenCalledTimes(1)
+    expect(progress).toHaveBeenCalledWith({ total: 0, completed: 0, failed: 0 })
+  })
+
   it('aborts between items when signal is aborted', async () => {
     const { deps } = makeWorld()
     const ac = new AbortController()

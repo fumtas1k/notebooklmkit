@@ -29,7 +29,6 @@ const EN = {
   importDone: 'Done: {ok} imported / {ng} failed',
   importFailedSummary: 'Stopped: {ok} imported / {ng} failed / {rest} not processed',
   importAborted: 'Stopped: {ok} imported / {rest} not processed',
-  closePanel: 'Close',
 } as const
 
 export type MsgKey = keyof typeof EN
@@ -65,7 +64,6 @@ const MESSAGES: Record<Lang, Record<MsgKey, string>> = {
     importDone: '完了: 成功 {ok}件 / 失敗 {ng}件',
     importFailedSummary: '中断: 成功 {ok}件 / 失敗 {ng}件 / 残り {rest}件は未処理',
     importAborted: '中断しました: 成功 {ok}件 / 残り {rest}件は未処理',
-    closePanel: '閉じる',
   },
 }
 

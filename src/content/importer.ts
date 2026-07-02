@@ -70,7 +70,7 @@ export async function importUrls(
       result.succeeded.push(url)
     } catch (err) {
       // 想定外 DOM / タイムアウト → 失敗を記録して停止（安全側）
-      result.failed.push({ url, reason: (err as Error).message })
+      result.failed.push({ url, reason: err instanceof Error ? err.message : String(err) })
       break
     }
   }
