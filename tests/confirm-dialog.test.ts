@@ -306,6 +306,48 @@ describe('confirmDeletion (focus trap: Tab stays inside the dialog)', () => {
   })
 })
 
+describe('confirmDeletion (single-instance guard / issue #14)', () => {
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  it('resolves a second concurrent call with false immediately and keeps only one overlay in the DOM', async () => {
+    const p1 = confirmDeletion({ count: 3, isSelectAll: false, t })
+    expect(document.querySelectorAll('[data-nlk="confirm-dialog"]').length).toBe(1)
+
+    const p2 = confirmDeletion({ count: 5, isSelectAll: false, t })
+    expect(await p2).toBe(false)
+    // 2 枚目は生成されず、1 枚目の overlay だけが残る
+    expect(document.querySelectorAll('[data-nlk="confirm-dialog"]').length).toBe(1)
+
+    // 1 枚目の pending な confirmDeletion を後片付け
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
+    expect(await p1).toBe(false)
+  })
+
+  it('does not double-register the document keydown listener when a second call is blocked', async () => {
+    const p1 = confirmDeletion({ count: 3, isSelectAll: false, t })
+    void confirmDeletion({ count: 5, isSelectAll: false, t })
+
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.focus()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+    // Enter 1 回で 1 枚目だけが settle する（2 枚目分の余計な副作用が無い）
+    expect(await p1).toBe(true)
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
+  })
+
+  it('allows a fresh dialog once the first one has been cleaned up (guard is not permanent)', async () => {
+    const p1 = confirmDeletion({ count: 3, isSelectAll: false, t })
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
+    expect(await p1).toBe(false)
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
+
+    const p2 = confirmDeletion({ count: 3, isSelectAll: false, t })
+    expect(document.querySelectorAll('[data-nlk="confirm-dialog"]').length).toBe(1)
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
+    expect(await p2).toBe(false)
+  })
+})
+
 describe('confirmDeletion (IME composition keys are ignored)', () => {
   beforeEach(() => { document.body.innerHTML = '' })
 

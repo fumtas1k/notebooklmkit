@@ -24,6 +24,12 @@ export function confirmDeletion(opts: {
   root?: HTMLElement
 }): Promise<boolean> {
   const { count, isSelectAll, t, root = document.body } = opts
+  // 単一インスタンスガード: 既にダイアログが表示中なら新規生成しない（スタック防止 / issue #14）。
+  // stopPropagation は同一 document 上の別リスナーを止められず、2 枚重なると
+  // 1 回の Enter/Escape で両方 settle してしまうため、安全側でキャンセル扱いにする。
+  if (root.querySelector('[data-nlk="confirm-dialog"]')) {
+    return Promise.resolve(false)
+  }
   const strong = needsStrongConfirm(count, isSelectAll)
   const previouslyFocused = document.activeElement as HTMLElement | null
 
