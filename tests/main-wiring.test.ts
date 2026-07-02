@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { init, start, buildTargets } from '../src/content/main'
+import { init, start, buildTargets, sameTargetKeys } from '../src/content/main'
+import { makeTarget } from '../src/types'
 import { SelectionStore } from '../src/content/selection'
 import { CHECKBOX_ATTR } from '../src/content/ui/row-checkbox'
 import { deleteNotebooks } from '../src/content/deleter'
@@ -24,6 +25,28 @@ describe('buildTargets', () => {
     const targets = buildTargets(store)
     expect(targets.map((t) => t.title)).toEqual(['A'])
     expect(targets.map((t) => t.key)).toEqual(['title:A'])
+  })
+})
+
+describe('sameTargetKeys', () => {
+  const tgt = (title: string) => makeTarget({ title })
+
+  it('returns true for the same key set regardless of order', () => {
+    expect(sameTargetKeys([tgt('A'), tgt('B')], [tgt('B'), tgt('A')])).toBe(true)
+  })
+  it('returns false when lengths differ', () => {
+    expect(sameTargetKeys([tgt('A')], [tgt('A'), tgt('B')])).toBe(false)
+    expect(sameTargetKeys([tgt('A'), tgt('B')], [tgt('A')])).toBe(false)
+  })
+  it('returns false when contents differ', () => {
+    expect(sameTargetKeys([tgt('A'), tgt('B')], [tgt('A'), tgt('C')])).toBe(false)
+  })
+  it('compares duplicate keys as a multiset (same-title edge case)', () => {
+    // 同名タイトルはキーが重複する（docs/requirements.md §8.5 の既知エッジケース）。
+    // 単純な Set 比較だと [A,A] と [A,B] を区別できないため多重集合で比較する。
+    expect(sameTargetKeys([tgt('A'), tgt('A')], [tgt('A'), tgt('A')])).toBe(true)
+    expect(sameTargetKeys([tgt('A'), tgt('A')], [tgt('A'), tgt('B')])).toBe(false)
+    expect(sameTargetKeys([tgt('A'), tgt('B')], [tgt('A'), tgt('A')])).toBe(false)
   })
 })
 
