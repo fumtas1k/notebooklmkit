@@ -79,7 +79,13 @@ export function init(root: ParentNode = document): () => void {
       const totalRows = getNotebookRows(root).length
       const isSelectAll = targets.length === totalRows
       const ok = await confirmDeletion({ count: targets.length, isSelectAll, t })
-      if (!ok) return
+      // confirm 待機中に teardown された場合は、たとえ確定されても進めない。
+      // currentAbort は confirm 後にしか代入されないため待機中の dispose は
+      // no-op になり、確認ダイアログも init 管理外の document.body に残って
+      // teardown を生き延びる。ここで再チェックしないと、dispose 後に確定
+      // されたときに新品の AbortController で破壊的削除一式が始まってしまう
+      // （issue #16 と同じハザード / レビュー第2ラウンド finding B）。
+      if (!ok || disposed) return
       // confirm 表示中に選択・一覧が変化していれば中止する（issue #13）。
       // 削除は取り消し不可のため、古いスナップショットのまま進めない。
       // フォーカストラップ（confirm-dialog.ts）が主経路を塞ぎ、こちらはキー

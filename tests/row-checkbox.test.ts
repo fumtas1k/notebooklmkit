@@ -158,4 +158,73 @@ describe('injectRowCheckboxes', () => {
     expect(store.size).toBe(0)
     expect(box.checked).toBe(false)
   })
+
+  // レビュー第2ラウンド finding A（S1）: 並び替えで先頭挿入が起きると、旧実装は
+  // 1 パス内でノード単位に prune するため、他行がそのキーを引き継ぐ前に消してしまい
+  // まだ存在する選択が無言で失われる。2 フェーズ reconcile ではこれを防ぐ。
+  it('keeps a selection alive across a reorder where another row inherits the key (S1)', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const rows = document.querySelectorAll('tr[mat-row]')
+    const node1 = rows[0]
+    const node2 = rows[1]
+    const box1 = node1.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    box1.checked = true
+    box1.dispatchEvent(new Event('change'))
+    expect(store.has('title:A')).toBe(true)
+
+    // 先頭挿入をシミュレート: node1 は新規ノートブック N、node2 が旧 A を引き継ぐ
+    node1.querySelector('span.project-table-title')!.textContent = 'N'
+    node2.querySelector('span.project-table-title')!.textContent = 'A'
+    injectRowCheckboxes(store)
+
+    expect(store.has('title:A')).toBe(true)
+    const box2 = node2.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(box2.checked).toBe(true)
+    const box1After = node1.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(box1After.checked).toBe(false)
+  })
+
+  // レビュー第2ラウンド finding A（S2）: シフトで表示だけチェックが残り件数が 0 になる
+  // （表示と件数の乖離）ケース。
+  it('keeps display and store count consistent across a shift (S2)', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const rows = document.querySelectorAll('tr[mat-row]')
+    const node1 = rows[0]
+    const node2 = rows[1]
+    const box2 = node2.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    box2.checked = true
+    box2.dispatchEvent(new Event('change'))
+    expect(store.has('title:B')).toBe(true)
+
+    // シフトをシミュレート: node1 が旧 B を引き継ぎ、node2 は新規 X になる
+    node1.querySelector('span.project-table-title')!.textContent = 'B'
+    node2.querySelector('span.project-table-title')!.textContent = 'X'
+    injectRowCheckboxes(store)
+
+    expect(store.has('title:B')).toBe(true)
+    expect(store.size).toBe(1)
+    const box1 = node1.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(box1.checked).toBe(true)
+  })
+
+  // レビュー第2ラウンド finding A: 描画途中（タイトル span が未充填の行がある）は
+  // 間引きパスを見送り、選択を壊さないこと。
+  it('does not prune while a row is mid-render (empty title span)', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const row = document.querySelector('tr[mat-row]')!
+    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    box.checked = true
+    box.dispatchEvent(new Event('change'))
+    expect(store.has('title:A')).toBe(true)
+
+    // もう一方の行のタイトル span がまだ空（Angular が描画中）
+    const otherRow = document.querySelectorAll('tr[mat-row]')[1]
+    otherRow.querySelector('span.project-table-title')!.textContent = ''
+    injectRowCheckboxes(store)
+
+    expect(store.has('title:A')).toBe(true)
+  })
 })

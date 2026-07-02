@@ -330,4 +330,32 @@ describe('runDelete error recovery', () => {
     resolveDelete({ succeeded: [], failed: [], aborted: true })
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
+
+  // レビュー第2ラウンド finding B: `await confirmDeletion` の待機中に dispose
+  // された場合、currentAbort はまだ null（confirm 後にしか代入されない）で
+  // no-op になるうえ、確認ダイアログは init 管理外の document.body に残るため
+  // teardown を生き延びる。dispose 後にユーザーが確定してしまうと、confirm 後に
+  // disposed を再チェックしていないと新品の AbortController で破壊的削除一式が
+  // 始まってしまう（issue #16 と同じハザード）。
+  it('does not start deleteNotebooks when disposed while the confirm dialog is still awaiting the user', async () => {
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    const dispose = init(root)
+
+    const checkbox = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    checkbox.checked = true
+    checkbox.dispatchEvent(new Event('change'))
+
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.click()
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+
+    // 確認ダイアログが確定されるより前に teardown される（SPA 遷移のシミュレーション）。
+    dispose()
+
+    // teardown 後にユーザー（または確定済みの Enter ハンドラ）がダイアログを確定する。
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(deleteNotebooks).not.toHaveBeenCalled()
+  })
 })
