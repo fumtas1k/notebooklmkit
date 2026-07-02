@@ -142,6 +142,10 @@ export function init(root: ParentNode = document): () => void {
 
   return () => {
     disposed = true
+    // 進行中の削除ループも停止させる。abort しないと deleter は残りの確定ターゲット
+    // 全件へ破壊的クリックを teardown 後も打ち続け、しかも bar.destroy() で Stop
+    // ボタンごと消えるため中断手段が無くなる（取り消し不可の操作 / issue #16）。
+    currentAbort?.abort()
     observer.disconnect()
     bar.destroy()
   }

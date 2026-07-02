@@ -3,6 +3,10 @@ import './ui/confirm-dialog.css'
 
 export const STRONG_CONFIRM_THRESHOLD = 10
 
+// overlay を識別する data-nlk マーカー。単一インスタンスガードの検索と mount 側の
+// 付与で共有し、片方だけリネームしてガードが無言で死ぬドリフトを防ぐ。
+const DIALOG_NLK = 'confirm-dialog'
+
 // ダイアログ内でフォーカス循環の対象にする要素。Tab はダイアログ表示中
 // document 全体で preventDefault されるため、ここに載らない要素はキーボードで
 // 到達不能になる。ダイアログに新しい操作要素を足すときは必ずここを確認する。
@@ -25,9 +29,10 @@ export function confirmDeletion(opts: {
 }): Promise<boolean> {
   const { count, isSelectAll, t, root = document.body } = opts
   // 単一インスタンスガード: 既にダイアログが表示中なら新規生成しない（スタック防止 / issue #14）。
-  // stopPropagation は同一 document 上の別リスナーを止められず、2 枚重なると
-  // 1 回の Enter/Escape で両方 settle してしまうため、安全側でキャンセル扱いにする。
-  if (root.querySelector('[data-nlk="confirm-dialog"]')) {
+  // keydown リスナーは document キャプチャに載る（グローバル）ため、検索も root
+  // サブツリーではなく document 全体で行う。root 局所だと別 root のダイアログを
+  // 見落とし、2 枚重なって 1 回の Enter/Escape で両方 settle し得る。
+  if (document.querySelector(`[data-nlk="${DIALOG_NLK}"]`)) {
     return Promise.resolve(false)
   }
   const strong = needsStrongConfirm(count, isSelectAll)
@@ -35,7 +40,7 @@ export function confirmDeletion(opts: {
 
   return new Promise<boolean>((resolve) => {
     const overlay = document.createElement('div')
-    overlay.setAttribute('data-nlk', 'confirm-dialog')
+    overlay.setAttribute('data-nlk', DIALOG_NLK)
     overlay.className = 'nlk-overlay'
 
     const box = document.createElement('div')

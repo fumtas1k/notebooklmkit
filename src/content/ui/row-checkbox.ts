@@ -10,11 +10,20 @@ export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = do
     const existing = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
     if (existing) {
       // 行ノードが Angular によって別ノートブックで再利用され得るため、既存の
-      // チェックボックスも毎回現在の identity へ同期する（checked / aria-label /
-      // キー属性が陳腐化して SelectionStore や読み上げとズレるのを防ぐ / issue #25）。
+      // チェックボックスも現在の identity へ同期する（陳腐化した checked /
+      // aria-label / キー属性が SelectionStore や読み上げとズレるのを防ぐ / issue #25）。
       const target = makeTarget(getRowIdentity(row))
-      existing.setAttribute(CHECKBOX_ATTR, target.key)
-      existing.setAttribute('aria-label', target.title)
+      const prevKey = existing.getAttribute(CHECKBOX_ATTR)
+      if (prevKey !== target.key) {
+        // キーが変わった＝この行ノードが別ノートブックへ付け替えられた。旧キーが
+        // store に残ると「表示は未チェックなのに件数だけ残る」幽霊選択になり、
+        // 無言 no-op 削除や同名行の意図しないプリチェックを招くため掃除する。
+        // 属性書き込みも値が変わったときだけ行い、無関係な mutation バッチでの
+        // 全行無条件書き込み（＋属性セレクタ再評価）を避ける。
+        if (prevKey) store.set(prevKey, false)
+        existing.setAttribute(CHECKBOX_ATTR, target.key)
+        existing.setAttribute('aria-label', target.title)
+      }
       existing.checked = store.has(target.key)
       continue
     }

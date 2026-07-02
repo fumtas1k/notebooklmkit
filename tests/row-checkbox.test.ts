@@ -137,4 +137,25 @@ describe('injectRowCheckboxes', () => {
     expect(box.checked).toBe(false)
     expect(store.has('title:C')).toBe(false)
   })
+
+  // issue #25 フォロー: 行が別ノートブックへ付け替えられたとき、旧キーを store から
+  // 掃除して「表示は未チェックなのに件数だけ残る」幽霊選択を残さないこと。
+  it('prunes the stale old key from the store when a selected row is reused with a new title', () => {
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const row = document.querySelector('tr[mat-row]')!
+    const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    box.checked = true
+    box.dispatchEvent(new Event('change'))
+    expect(store.size).toBe(1)
+
+    // この行ノードが別ノートブック（未選択の C）へ付け替えられる
+    row.querySelector('span.project-table-title')!.textContent = 'C'
+    injectRowCheckboxes(store)
+
+    // 旧キー title:A は残らず、幽霊選択（件数だけ 1）にならない
+    expect(store.has('title:A')).toBe(false)
+    expect(store.size).toBe(0)
+    expect(box.checked).toBe(false)
+  })
 })

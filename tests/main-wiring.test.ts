@@ -295,4 +295,39 @@ describe('runDelete error recovery', () => {
 
     observeSpy.mockRestore()
   })
+
+  // issue #16: disposer は observer の復活を防ぐだけでなく、進行中の削除ループも
+  // abort しなければならない。abort しないと deleter が teardown 後も破壊的クリックを
+  // 打ち続け、Stop ボタンも消えて中断手段が無くなる。
+  it('aborts the in-flight delete when disposed mid-run', async () => {
+    let capturedSignal: AbortSignal | undefined
+    let resolveDelete: (v: Awaited<ReturnType<typeof deleteNotebooks>>) => void = () => {}
+    vi.mocked(deleteNotebooks).mockImplementation(
+      (_targets, _deps, opts) => {
+        capturedSignal = opts?.signal
+        return new Promise((resolve) => { resolveDelete = resolve })
+      },
+    )
+
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    const dispose = init(root)
+
+    const checkbox = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    checkbox.checked = true
+    checkbox.dispatchEvent(new Event('change'))
+
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(capturedSignal?.aborted).toBe(false)
+
+    // 削除が pending の間に dispose すると、渡した signal が abort されること。
+    dispose()
+    expect(capturedSignal?.aborted).toBe(true)
+
+    resolveDelete({ succeeded: [], failed: [], aborted: true })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
 })
