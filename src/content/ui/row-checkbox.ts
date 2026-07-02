@@ -1,6 +1,7 @@
 import { getNotebookRows, getRowIdentity, getTitleCell, getRowKey } from '../selectors'
 import { makeTarget } from '../../types'
 import type { SelectionStore } from '../selection'
+import './row-checkbox.css'
 
 export const CHECKBOX_ATTR = 'data-nlk-checkbox'
 
@@ -14,13 +15,9 @@ export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = do
     const id = getRowIdentity(row)
     const target = makeTarget(id)
 
+    // スタイルは row-checkbox.css（co-located）で data 属性セレクタに対して当てる。
     const label = document.createElement('label')
     label.setAttribute('data-nlk', 'checkbox-hit')
-    label.style.padding = '8px'
-    label.style.cursor = 'pointer'
-    label.style.display = 'inline-block'
-    label.style.verticalAlign = 'middle'
-    label.style.marginRight = '4px'
     // 行クリック（ノートブックを開く）へ伝播させない。既定のトグルは維持。
     label.addEventListener('click', (ev) => ev.stopPropagation())
 
@@ -29,10 +26,6 @@ export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = do
     box.setAttribute(CHECKBOX_ATTR, target.key)
     box.setAttribute('aria-label', target.title)
     box.checked = store.has(target.key)
-    box.style.width = '18px'
-    box.style.height = '18px'
-    box.style.cursor = 'pointer'
-    box.style.display = 'block'
     box.addEventListener('change', () =>
       store.set(getRowKey(row), box.checked),
     )

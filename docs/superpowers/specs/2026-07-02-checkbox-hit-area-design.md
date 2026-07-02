@@ -18,13 +18,13 @@
 
 ## 設計
 
-変更ファイルは `src/content/ui/row-checkbox.ts` のみ（＋ `tests/row-checkbox.test.ts`）。
+変更ファイルは `src/content/ui/row-checkbox.ts` と `src/content/ui/row-checkbox.css`（＋ `tests/row-checkbox.test.ts`）。
 
 1. `<label data-nlk="checkbox-hit">` を作り、その中に既存の `<input type="checkbox">` を入れてタイトルセル先頭に挿入する。
 2. **label 側**に `click` の `stopPropagation()` を付ける（行クリック＝ノートブック遷移への伝播を遮断）。label 内どこをクリックしてもブラウザ標準動作でチェックボックスがトグルするため、追加のトグルロジックは不要。
-3. スタイル（現行同様インラインで付与）:
-   - label: `padding: 8px` / `cursor: pointer` / `display: inline-block` / `vertical-align: middle` / `margin-right: 4px`（padding 8px と合わせて現行の 12px 相当の間隔を維持）
-   - input: `width: 18px` / `height: 18px` / `cursor: pointer` / `display: block`
+3. スタイルは co-located CSS（`row-checkbox.css`。`action-bar.css` と同じ規約で `row-checkbox.ts` から import）に data 属性セレクタで記述する:
+   - `label[data-nlk="checkbox-hit"]`: `padding: 8px` / `cursor: pointer` / `display: inline-block` / `vertical-align: middle` / `margin-left: -8px` / `margin-right: 4px`（`margin-left: -8px` は左 padding 分を打ち消し、チェックボックスの左端位置を旧実装相当に保ちつつ左側の当たり判定は維持する。padding 8px + margin-right 4px で現行の 12px 相当の間隔を維持）
+   - `input[data-nlk-checkbox]`（属性値は行ごとに異なるため存在セレクタ）: `width: 18px` / `height: 18px` / `display: block`（`cursor: pointer` は親 label から継承されるため指定しない）
 4. `CHECKBOX_ATTR` は引き続き **input に付ける**（冪等チェック・store 同期・テストのフックの意味を変えない）。`change` → `store.set(...)` も現状のまま。
 
 ### エッジケース
