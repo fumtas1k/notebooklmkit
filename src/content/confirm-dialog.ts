@@ -82,6 +82,24 @@ export function confirmDeletion(opts: {
         cleanup(false)
         return
       }
+      if (ev.key === 'Tab') {
+        // フォーカストラップ: aria-modal だけでは Tab は塞げないため、
+        // ダイアログ内のフォーカス可能要素の間で手動循環させる。背後の
+        // チェックボックス等へ到達して選択を変更されるのを防ぐ（issue #13）。
+        ev.preventDefault()
+        ev.stopPropagation()
+        const els = Array.from(
+          box.querySelectorAll<HTMLElement>('button:not([disabled]), input'),
+        )
+        if (els.length === 0) return
+        const idx = els.indexOf(document.activeElement as HTMLElement)
+        // idx === -1（フォーカスがダイアログ外）は先頭 / 末尾へ引き戻す
+        const next = ev.shiftKey
+          ? els[(idx <= 0 ? els.length : idx) - 1]
+          : els[(idx + 1) % els.length]
+        next.focus()
+        return
+      }
       if (ev.key === 'Enter') {
         // Swallow Enter unconditionally while the dialog is open, even when
         // the strong-confirm validation guard blocks the actual confirm, so

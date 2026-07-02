@@ -183,3 +183,74 @@ describe('confirmDeletion (keys do not leak to the page behind the modal)', () =
     expect(document.querySelector('[data-nlk="confirm-dialog"]')).toBeNull()
   })
 })
+
+describe('confirmDeletion (focus trap: Tab stays inside the dialog)', () => {
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  const tab = (shift = false) =>
+    document.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Tab', shiftKey: shift, bubbles: true, cancelable: true,
+    }))
+
+  it('cycles Tab through cancel -> ok -> cancel in a normal dialog', async () => {
+    const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    const cancel = document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!
+    const ok = document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!
+    expect(document.activeElement).toBe(cancel) // 初期フォーカス
+    tab(); expect(document.activeElement).toBe(ok)
+    tab(); expect(document.activeElement).toBe(cancel) // 末尾から先頭へ循環
+    cancel.click()
+    expect(await p).toBe(false)
+  })
+
+  it('cycles Shift+Tab backwards (wraps from first to last)', async () => {
+    const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    const cancel = document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!
+    const ok = document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!
+    tab(true); expect(document.activeElement).toBe(ok) // cancel（先頭）から逆方向 → 末尾へ
+    tab(true); expect(document.activeElement).toBe(cancel)
+    cancel.click()
+    expect(await p).toBe(false)
+  })
+
+  it('skips the disabled confirm button in a strong dialog, includes it once input is valid', async () => {
+    const p = confirmDeletion({ count: 12, isSelectAll: false, t })
+    const input = document.querySelector<HTMLInputElement>('[data-nlk="confirm-input"]')!
+    const cancel = document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!
+    const ok = document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!
+    // DOM 順のフォーカス候補は input, cancel, ok（ok は disabled の間は候補外）
+    expect(document.activeElement).toBe(input) // strong は input が初期フォーカス
+    tab(); expect(document.activeElement).toBe(cancel)
+    tab(); expect(document.activeElement).toBe(input) // ok は disabled → スキップして循環
+    input.value = '12'
+    input.dispatchEvent(new Event('input')) // ok が有効になる
+    tab(); expect(document.activeElement).toBe(cancel)
+    tab(); expect(document.activeElement).toBe(ok) // 有効化後は循環に含まれる
+    cancel.click()
+    expect(await p).toBe(false)
+  })
+
+  it('pulls focus back into the dialog when focus escaped outside', async () => {
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    outside.focus() // フォーカスがダイアログ外へ逃げた状態を再現
+    expect(document.activeElement).toBe(outside)
+    tab()
+    expect(document.activeElement)
+      .toBe(document.querySelector('[data-nlk="confirm-cancel"]')) // 先頭へ引き戻す
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
+    expect(await p).toBe(false)
+  })
+
+  it('stops Tab from bubbling past the dialog', async () => {
+    const p = confirmDeletion({ count: 3, isSelectAll: false, t })
+    const box = document.querySelector<HTMLElement>('.nlk-dialog')!
+    let bodyHeard = false
+    document.body.addEventListener('keydown', () => { bodyHeard = true })
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(bodyHeard).toBe(false)
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
+    expect(await p).toBe(false)
+  })
+})
