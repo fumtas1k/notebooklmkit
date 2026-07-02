@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { init, start, buildTargets } from '../src/content/main'
+import { init, start, buildTargets, sameTargetKeys } from '../src/content/main'
+import { makeTarget } from '../src/types'
 import { SelectionStore } from '../src/content/selection'
 import { CHECKBOX_ATTR } from '../src/content/ui/row-checkbox'
 import { deleteNotebooks } from '../src/content/deleter'
@@ -24,6 +25,28 @@ describe('buildTargets', () => {
     const targets = buildTargets(store)
     expect(targets.map((t) => t.title)).toEqual(['A'])
     expect(targets.map((t) => t.key)).toEqual(['title:A'])
+  })
+})
+
+describe('sameTargetKeys', () => {
+  const tgt = (title: string) => makeTarget({ title })
+
+  it('returns true for the same key set regardless of order', () => {
+    expect(sameTargetKeys([tgt('A'), tgt('B')], [tgt('B'), tgt('A')])).toBe(true)
+  })
+  it('returns false when lengths differ', () => {
+    expect(sameTargetKeys([tgt('A')], [tgt('A'), tgt('B')])).toBe(false)
+    expect(sameTargetKeys([tgt('A'), tgt('B')], [tgt('A')])).toBe(false)
+  })
+  it('returns false when contents differ', () => {
+    expect(sameTargetKeys([tgt('A'), tgt('B')], [tgt('A'), tgt('C')])).toBe(false)
+  })
+  it('compares duplicate keys as a multiset (same-title edge case)', () => {
+    // 同名タイトルはキーが重複する（docs/requirements.md §8.5 の既知エッジケース）。
+    // 単純な Set 比較だと [A,A] と [A,B] を区別できないため多重集合で比較する。
+    expect(sameTargetKeys([tgt('A'), tgt('A')], [tgt('A'), tgt('A')])).toBe(true)
+    expect(sameTargetKeys([tgt('A'), tgt('A')], [tgt('A'), tgt('B')])).toBe(false)
+    expect(sameTargetKeys([tgt('A'), tgt('B')], [tgt('A'), tgt('A')])).toBe(false)
   })
 })
 
@@ -192,6 +215,39 @@ describe('runDelete error recovery', () => {
     expect(document.querySelectorAll('[data-nlk="confirm-dialog"]').length).toBe(1)
 
     // 後片付け: 開いたダイアログを閉じ、overlay / リスナーを残さない。
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  it('aborts without deleting when the selection changed while the confirm dialog was open', async () => {
+    // Detached root: 同 describe 内の他テストと同じ理由（古い MutationObserver との競合回避）。
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    init(root)
+    const boxes = root.querySelectorAll<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
+    expect(boxes.length).toBe(2)
+    boxes[0].checked = true
+    boxes[0].dispatchEvent(new Event('change'))
+
+    const deleteBtn = document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')
+    deleteBtn!.click()
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+
+    // 確認ダイアログ表示中に背後の選択を変更する（issue #13 の割り込み経路を再現）
+    boxes[1].checked = true
+    boxes[1].dispatchEvent(new Event('change'))
+
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // 古いスナップショットのまま削除に進んではならない
+    expect(deleteNotebooks).not.toHaveBeenCalled()
+    const progress = document.querySelector('[data-nlk="bar-progress"]')
+    expect(progress!.textContent).toMatch(/選択が変更された|selection changed/)
+
+    // 中止後は deleting フラグが解除され、再度削除を開始できる
+    deleteBtn!.click()
+    expect(document.querySelectorAll('[data-nlk="confirm-dialog"]').length).toBe(1)
     document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
   })

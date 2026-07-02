@@ -20,6 +20,21 @@ export function buildTargets(store: SelectionStore, root: ParentNode = document)
     .filter((tgt) => selected.has(tgt.key))
 }
 
+// confirm 表示中に選択・一覧が変化していないかの検証に使う（issue #13）。
+// キーはタイトル由来で重複し得る（同名ノートブック）ため、多重集合として比較する。
+// 順序は比較しない（削除順が変わるだけで対象集合は同じ）。
+export function sameTargetKeys(a: NotebookTarget[], b: NotebookTarget[]): boolean {
+  if (a.length !== b.length) return false
+  const counts = new Map<string, number>()
+  for (const t of a) counts.set(t.key, (counts.get(t.key) ?? 0) + 1)
+  for (const t of b) {
+    const n = counts.get(t.key)
+    if (!n) return false
+    counts.set(t.key, n - 1)
+  }
+  return true
+}
+
 export function init(root: ParentNode = document): () => void {
   const store = new SelectionStore()
   const t = createT(detectLang())
@@ -62,6 +77,16 @@ export function init(root: ParentNode = document): () => void {
       const isSelectAll = targets.length === totalRows
       const ok = await confirmDeletion({ count: targets.length, isSelectAll, t })
       if (!ok) return
+      // confirm 表示中に選択・一覧が変化していれば中止する（issue #13）。
+      // 削除は取り消し不可のため、古いスナップショットのまま進めない。
+      // フォーカストラップ（confirm-dialog.ts）が主経路を塞ぎ、こちらはキー
+      // 多重集合レベルの安全網（同名タイトルの置換までは検出できない ——
+      // タイトル識別の既知の制約。types.ts 参照）。検証通過後は確認時の順序を
+      // 保つため targets をそのまま使う。
+      if (!sameTargetKeys(targets, buildTargets(store, root))) {
+        bar.setProgress(t('selectionChanged'))
+        return
+      }
 
       const ac = new AbortController()
       currentAbort = ac

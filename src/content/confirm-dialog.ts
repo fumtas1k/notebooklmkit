@@ -3,6 +3,12 @@ import './ui/confirm-dialog.css'
 
 export const STRONG_CONFIRM_THRESHOLD = 10
 
+// ダイアログ内でフォーカス循環の対象にする要素。Tab はダイアログ表示中
+// document 全体で preventDefault されるため、ここに載らない要素はキーボードで
+// 到達不能になる。ダイアログに新しい操作要素を足すときは必ずここを確認する。
+const FOCUSABLE =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+
 export function needsStrongConfirm(count: number, isSelectAll: boolean): boolean {
   return isSelectAll || count >= STRONG_CONFIRM_THRESHOLD
 }
@@ -76,19 +82,54 @@ export function confirmDeletion(opts: {
       resolve(result)
     }
     const onKeydown = (ev: KeyboardEvent) => {
+      // IME 変換中の Enter / Escape（変換確定・変換キャンセル）はダイアログ
+      // 操作として扱わない（keyCode 229 は Chrome の IME 経由キー）。Tab には
+      // 適用しない —— 変換中でもトラップを維持し、フォーカス脱出を防ぐ。
+      const composing = ev.isComposing || ev.keyCode === 229
       if (ev.key === 'Escape') {
+        if (composing) return
         ev.preventDefault()
         ev.stopPropagation()
         cleanup(false)
         return
       }
-      if (ev.key === 'Enter') {
-        // Swallow Enter unconditionally while the dialog is open, even when
-        // the strong-confirm validation guard blocks the actual confirm, so
-        // the keystroke never leaks through to NotebookLM's page behind the
-        // modal.
+      if (ev.key === 'Tab') {
+        // 修飾キー付き（Ctrl/Alt/Meta+Tab）はフォーカス移動ではなく
+        // ブラウザ / OS 側のショートカットのため素通しする。
+        if (ev.ctrlKey || ev.altKey || ev.metaKey) return
+        // フォーカストラップ: aria-modal だけでは Tab は塞げないため、
+        // ダイアログ内のフォーカス可能要素の間で手動循環させる。背後の
+        // チェックボックス等へ到達して選択を変更されるのを防ぐ（issue #13）。
         ev.preventDefault()
         ev.stopPropagation()
+        const els = Array.from(box.querySelectorAll<HTMLElement>(FOCUSABLE))
+        if (els.length === 0) return // 全要素 disabled 化など将来変更への保険
+        const idx = els.indexOf(document.activeElement as HTMLElement)
+        const next = idx === -1
+          ? els[0] // ダイアログ外からの引き戻しは方向に関係なく安全な先頭（input / cancel）へ
+          : ev.shiftKey
+            ? els[(idx === 0 ? els.length : idx) - 1]
+            : els[(idx + 1) % els.length]
+        next.focus()
+        return
+      }
+      if (ev.key === 'Enter') {
+        if (composing) return
+        // ダイアログ表示中の Enter は、バブリング経路とこのリスナーより後に
+        // 登録されたリスナーへは漏らさない（先行登録の document / window
+        // キャプチャには届き得る）。フォーカス中のボタンの意図を尊重し、
+        // Cancel フォーカス時はキャンセルとして扱う。
+        ev.preventDefault()
+        ev.stopPropagation()
+        const active = document.activeElement
+        if (active === cancel) {
+          cleanup(false)
+          return
+        }
+        // フォーカスがダイアログ外へ逃げている間の Enter は確定にしない
+        // （取り消し不可の削除のため安全側。Tab で引き戻してから操作する）。
+        // contains(null) は false のため、activeElement が null / SVG でも確定しない。
+        if (!box.contains(active)) return
         if (strong && !isConfirmInputValid(input!.value, count)) return
         cleanup(true)
       }

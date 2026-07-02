@@ -15,6 +15,7 @@ const EN = {
   abortedSummary: 'Stopped: {ok} deleted / {rest} not processed',
   abort: 'Stop',
   domError: 'Stopped: NotebookLM UI structure did not match expectations',
+  selectionChanged: 'Cancelled: the selection changed while the confirmation dialog was open',
 } as const
 
 export type MsgKey = keyof typeof EN
@@ -36,6 +37,7 @@ const MESSAGES: Record<Lang, Record<MsgKey, string>> = {
     abortedSummary: '中断しました: 成功 {ok}件 / 残り {rest}件は未処理',
     abort: '中断',
     domError: 'NotebookLM の画面構造が想定と異なるため中断しました',
+    selectionChanged: '確認ダイアログ表示中に選択が変更されたため中止しました',
   },
 }
 
