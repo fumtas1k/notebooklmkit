@@ -1,0 +1,16 @@
+/* チェックボックスの当たり判定拡大用ラッパー。padding で透明なヒットエリアを広げる。
+   左 padding 8px の分だけ margin-left で戻し、チェックボックスの左端位置を旧実装相当に保つ。 */
+label[data-nlk="checkbox-hit"] {
+  padding: 8px;
+  cursor: pointer;
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: -8px;
+  margin-right: 4px;
+}
+/* cursor は親 label から継承されるためここでは指定しない */
+input[data-nlk-checkbox] {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
