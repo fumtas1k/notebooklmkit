@@ -10,6 +10,12 @@ export const SELECTORS = {
   confirmDialog: 'mat-dialog-container',
   confirmDeleteButton: 'button.primary-button',
   cancelButton: 'button.tertiary-button',
+  // ---- 以下 Phase 2（ソース追加フロー）。実 DOM 調査は未実施の暫定セレクタ。----
+  // クラス名 churn に強いよう、テキスト / aria-label マッチング（SOURCE_TEXT）を主軸にする。
+  // 実機確認は docs/e2e-checklist-phase2.md。ズレたらこのファイルだけを直す。
+  sourceDialog: 'mat-dialog-container',
+  sourceChipCandidates: 'mat-chip, .mdc-evolution-chip, [role="option"], button',
+  sourceSubmit: 'button[type="submit"]',
 } as const
 
 export function getNotebookRows(root: ParentNode = document): HTMLElement[] {
@@ -51,4 +57,53 @@ export function getConfirmDialog(root: ParentNode = document): HTMLElement | nul
 
 export function getConfirmDeleteButton(dialog: HTMLElement): HTMLElement | null {
   return dialog.querySelector<HTMLElement>(SELECTORS.confirmDeleteButton)
+}
+
+// ソース追加フローのテキストマッチャ（ja / en）。NotebookLM の UI 言語に依らず動くよう両対応。
+export const SOURCE_TEXT = {
+  addButtonLabel: /ソースを追加|add source/i,
+  addButtonExact: /^[+＋]?\s*(追加|add)$/i,
+  websiteChip: /ウェブサイト|website/i,
+  submit: /挿入|insert/i,
+} as const
+
+// ソースパネルの「追加」ボタン。自拡張が注入した UI（data-nlk 配下）は除外する。
+export function getAddSourceButton(root: ParentNode = document): HTMLElement | null {
+  const buttons = Array.from(root.querySelectorAll<HTMLElement>('button')).filter(
+    (b) => !b.closest('[data-nlk]'),
+  )
+  return (
+    buttons.find((b) => SOURCE_TEXT.addButtonLabel.test(b.getAttribute('aria-label') ?? '')) ??
+    buttons.find((b) => SOURCE_TEXT.addButtonLabel.test(b.textContent ?? '')) ??
+    buttons.find((b) => SOURCE_TEXT.addButtonExact.test((b.textContent ?? '').trim())) ??
+    null
+  )
+}
+
+export function getSourceDialog(root: ParentNode = document): HTMLElement | null {
+  return root.querySelector<HTMLElement>(SELECTORS.sourceDialog)
+}
+
+// ダイアログ内の「ウェブサイト」チップ。querySelectorAll は document order（親→子）
+// なので、テキストを含む最外のクリック可能候補が返る。
+export function getWebsiteChip(dialog: HTMLElement): HTMLElement | null {
+  const candidates = Array.from(dialog.querySelectorAll<HTMLElement>(SELECTORS.sourceChipCandidates))
+  return candidates.find((el) => SOURCE_TEXT.websiteChip.test(el.textContent ?? '')) ?? null
+}
+
+export function getSourceUrlInput(dialog: HTMLElement): HTMLInputElement | HTMLTextAreaElement | null {
+  return (
+    dialog.querySelector<HTMLInputElement>('input[type="url"]') ??
+    dialog.querySelector<HTMLInputElement>('input[type="text"]') ??
+    dialog.querySelector<HTMLInputElement>('input:not([type])') ??
+    dialog.querySelector<HTMLTextAreaElement>('textarea')
+  )
+}
+
+export function getSourceSubmitButton(dialog: HTMLElement): HTMLElement | null {
+  const buttons = Array.from(dialog.querySelectorAll<HTMLElement>('button'))
+  return (
+    buttons.find((b) => SOURCE_TEXT.submit.test((b.textContent ?? '').trim())) ??
+    dialog.querySelector<HTMLElement>(SELECTORS.sourceSubmit)
+  )
 }
