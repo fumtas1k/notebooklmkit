@@ -69,6 +69,23 @@ describe('source-flow selectors', () => {
     expect(getWebsiteChip(dialog)).toBeNull()
   })
 
+  it('getWebsiteChip returns null when only a non-drop-zone button has website text (ja)', () => {
+    const dialog = document.createElement('div')
+    // drop-zone-icon-button ではない裸 button が「ウェブサイト」テキストを含む実 DOM 想定
+    // フィクスチャ。旧候補（裸 button 込み）なら誤マッチしていたケースの回帰テスト。
+    dialog.innerHTML = `<button class="help-link">ウェブサイトのソースについて詳しく</button>`
+    expect(getWebsiteChip(dialog)).toBeNull()
+  })
+
+  it('getWebsiteChip prefers the drop-zone-icon-button chip over a non-drop-zone button with matching text', () => {
+    const dialog = document.createElement('div')
+    dialog.innerHTML = `
+      <button class="help-link">ウェブサイトのソースについて詳しく</button>
+      <button class="drop-zone-icon-button"><span>ウェブサイト</span></button>`
+    const el = getWebsiteChip(dialog)
+    expect(el?.classList.contains('drop-zone-icon-button')).toBe(true)
+  })
+
   it('getSourceUrlInput prefers url/text inputs and falls back to textarea', () => {
     const dialog = document.createElement('div')
     dialog.innerHTML = `<input type="checkbox"><input type="url">`
