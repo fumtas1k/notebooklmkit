@@ -69,6 +69,20 @@ describe('handleActionClick', () => {
     await expect(handleActionClick('https://x.example/', d)).resolves.toBeUndefined()
     expect(d.badges).toContain('!')
   })
+
+  it('falls back to "!" badge without throwing when storageGet("lastNotebook") rejects', async () => {
+    const d = makeDeps({ lastNotebook: { id: 'a', title: 'A' } })
+    d.storageGet = vi.fn(async () => { throw new Error('storage unavailable') })
+    await expect(handleActionClick('https://x.example/', d)).resolves.toBeUndefined()
+    expect(d.badges).toContain('!')
+  })
+
+  it('falls back to "!" badge without throwing when storageSet({pendingImport}) rejects', async () => {
+    const d = makeDeps({ lastNotebook: { id: 'a', title: 'A' } })
+    d.storageSet = vi.fn(async () => { throw new Error('storage unavailable') })
+    await expect(handleActionClick('https://x.example/', d)).resolves.toBeUndefined()
+    expect(d.badges).toContain('!')
+  })
 })
 
 describe('handleImportResult', () => {

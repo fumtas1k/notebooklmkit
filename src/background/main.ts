@@ -70,23 +70,24 @@ export async function handleActionClick(clickedUrl: string | undefined, d: Actio
     d.setBadge('!')
     return
   }
-  const got = await d.storageGet('lastNotebook')
-  const last = got.lastNotebook as { id: string; title: string } | undefined
-  if (!last) {
-    // 対象が無い: NotebookLM を開いて「先に開いて」を促す
-    await d.createTab({ url: NOTEBOOK_HOME, active: true })
-    d.setBadge('!')
-    return
-  }
-  const id = last.id
-  const pending: PendingImport = { notebookId: id, url: clickedUrl, ts: d.now() }
-  await d.storageSet({ pendingImport: pending })
-  d.setBadge('…')
-
-  // ここから先は tabs 操作（実 chrome では sendTabMessage が受信側リスナー不在時に
-  // reject し得るなど、失敗が起こり得る）。失敗してもバッジを '!' に戻して正常終了させ、
-  // '…' 固着（リカバリ不能）を防ぐ。
+  // ここから先（storage 読み書き含む）は失敗し得る（実 chrome では
+  // chrome.storage.local の read/write が reject する場合や、sendTabMessage が
+  // 受信側リスナー不在時に reject し得るなど）。失敗してもバッジを '!' に戻して
+  // 正常終了させ、未処理拒否や '…' 固着（リカバリ不能）を防ぐ。
   try {
+    const got = await d.storageGet('lastNotebook')
+    const last = got.lastNotebook as { id: string; title: string } | undefined
+    if (!last) {
+      // 対象が無い: NotebookLM を開いて「先に開いて」を促す
+      await d.createTab({ url: NOTEBOOK_HOME, active: true })
+      d.setBadge('!')
+      return
+    }
+    const id = last.id
+    const pending: PendingImport = { notebookId: id, url: clickedUrl, ts: d.now() }
+    await d.storageSet({ pendingImport: pending })
+    d.setBadge('…')
+
     const tabs = await d.queryTabs({ url: `${NOTEBOOK_HOME}*` })
     const existing = tabs.find((t) => {
       if (t.id === undefined || !t.url) return false
