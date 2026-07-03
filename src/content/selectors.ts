@@ -15,7 +15,6 @@ export const SELECTORS = {
   // 実機確認は docs/e2e-checklist-phase2.md。ズレたらこのファイルだけを直す。
   sourceDialog: 'mat-dialog-container',
   sourceChipCandidates: 'mat-chip, .mdc-evolution-chip, [role="option"], button.drop-zone-icon-button',
-  sourceSubmit: 'button[type="submit"]',
 } as const
 
 export function getNotebookRows(root: ParentNode = document): HTMLElement[] {
@@ -101,9 +100,8 @@ export function getSourceUrlInput(dialog: HTMLElement): HTMLInputElement | HTMLT
 }
 
 export function getSourceSubmitButton(dialog: HTMLElement): HTMLElement | null {
+  // 実 DOM の挿入ボタンは type="button"。テキスト（ja/en）で一致させる。
+  // 死んだ button[type="submit"] フォールバックは撤去（無関係な submit の誤クリック防止）。
   const buttons = Array.from(dialog.querySelectorAll<HTMLElement>('button'))
-  return (
-    buttons.find((b) => SOURCE_TEXT.submit.test((b.textContent ?? '').trim())) ??
-    dialog.querySelector<HTMLElement>(SELECTORS.sourceSubmit)
-  )
+  return buttons.find((b) => SOURCE_TEXT.submit.test((b.textContent ?? '').trim())) ?? null
 }

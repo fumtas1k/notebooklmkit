@@ -72,12 +72,14 @@ describe('source-flow selectors (provisional)', () => {
     expect(getSourceUrlInput(dialog)).toBeNull()
   })
 
-  it('getSourceSubmitButton matches 挿入/Insert text, then submit type', () => {
+  it('getSourceSubmitButton matches 挿入/Insert text only (no submit-type fallback)', () => {
     const dialog = document.createElement('div')
-    dialog.innerHTML = `<button>キャンセル</button><button>挿入</button>`
+    // 実 DOM の挿入ボタンは type="button"。テキストで一致させる。
+    dialog.innerHTML = `<button type="button">キャンセル</button><button type="button">挿入</button>`
     expect(getSourceSubmitButton(dialog)?.textContent).toBe('挿入')
+    // type="submit" フォールバックは撤去したので、挿入テキストの無い submit ボタンは拾わない。
     dialog.innerHTML = `<button type="submit">Go</button>`
-    expect(getSourceSubmitButton(dialog)?.textContent).toBe('Go')
+    expect(getSourceSubmitButton(dialog)).toBeNull()
     dialog.innerHTML = `<button>キャンセル</button>`
     expect(getSourceSubmitButton(dialog)).toBeNull()
   })
