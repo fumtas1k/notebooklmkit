@@ -4,7 +4,7 @@ import {
   getSourceUrlInput, getSourceSubmitButton,
 } from '../src/content/selectors'
 
-describe('source-flow selectors (provisional)', () => {
+describe('source-flow selectors', () => {
   beforeEach(() => { document.body.innerHTML = '' })
 
   it('getAddSourceButton finds a button by aria-label', () => {
