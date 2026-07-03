@@ -284,7 +284,15 @@ export async function handlePendingCreate(
     return
   }
   await env.storageRemove('pendingCreate')
-  const ok = await run(pending.urls)
+  // M-3: run が同期/非同期どちらで throw しても unhandled rejection にせず、
+  // 結果メッセージを必ず送る（storage は実行前に既にクリア済みなので二重実行は起きない）。
+  let ok: boolean
+  try {
+    ok = await run(pending.urls)
+  } catch (err) {
+    console.error('notebooklmkit: unexpected error during pending create', err)
+    ok = false
+  }
   env.sendMessage({ type: CREATE_RESULT_MESSAGE, ok })
 }
 

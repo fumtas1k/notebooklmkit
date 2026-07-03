@@ -1,5 +1,5 @@
 import {
-  LIST_TABS_MESSAGE, CREATE_RESULT_MESSAGE, type TabInfo, type PendingCreate,
+  LIST_TABS_MESSAGE, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type TabInfo, type PendingCreate,
 } from '../types'
 
 // chrome.tabs.query の結果からインポート候補になるタブだけを残す純関数。
@@ -51,6 +51,8 @@ function isHttpUrl(url: string): boolean {
 
 export interface ClipDeps {
   storageSet(items: Record<string, unknown>): Promise<void>
+  storageGet(key: string): Promise<Record<string, unknown>>
+  storageRemove(key: string): Promise<void>
   createTab(props: { url: string; active: boolean }): Promise<unknown>
   setBadge(text: string): void
   now(): number
@@ -70,6 +72,10 @@ export async function handleClipClick(clickedUrl: string | undefined, d: ClipDep
     d.setBadge('…')
     await d.createTab({ url: NOTEBOOK_HOME, active: true })
   } catch {
+    // M-1: storageSet 後に createTab が失敗すると pendingCreate が残留し、後で
+    // 手動で NotebookLM を開いた際に意図しない自動作成を招く。二重障害でも
+    // ここは投げずに badge '!' へ帰着させる。
+    await d.storageRemove('pendingCreate').catch(() => {})
     d.setBadge('!')
   }
 }
@@ -79,6 +85,21 @@ export function handleCreateResult(ok: boolean, d: Pick<ClipDeps, 'setBadge'>): 
   d.setBadge(ok ? '✓' : '!')
 }
 
+// I-1: content script が nlk:create-result を返せない経路（未ログインで
+// notebooklm→accounts にリダイレクトし content script が走らない／タブを
+// 閉じる／ネットワーク断）でバッジが '…' のまま固着するのを防ぐウォッチドッグ。
+// TTL 経過後も pendingCreate が残っている（＝content が実行前クリアしていない
+// ＝フローが走らなかった）場合のみ badge '!' にして掃除する。正常フローでは
+// content が先にクリアしているため no-op になる。
+export async function resetStuckClip(
+  d: Pick<ClipDeps, 'storageGet' | 'storageRemove' | 'setBadge'>,
+): Promise<void> {
+  const got = await d.storageGet('pendingCreate')
+  if (got.pendingCreate === undefined) return
+  d.setBadge('!')
+  await d.storageRemove('pendingCreate')
+}
+
 // 実 chrome への配線（薄いグルー・非テスト）。chrome.action が無い環境では登録しない。
 if (typeof chrome !== 'undefined' && chrome.action?.onClicked) {
   const clearLater = (t: string) => {
@@ -86,11 +107,18 @@ if (typeof chrome !== 'undefined' && chrome.action?.onClicked) {
   }
   const deps: ClipDeps = {
     storageSet: (i) => chrome.storage.local.set(i),
+    storageGet: (k) => chrome.storage.local.get(k),
+    storageRemove: (k) => chrome.storage.local.remove(k),
     createTab: (p) => chrome.tabs.create(p),
     setBadge: (text) => { void chrome.action.setBadgeText({ text }); clearLater(text) },
     now: () => Date.now(),
   }
-  chrome.action.onClicked.addListener((tab: { url?: string }) => { void handleClipClick(tab?.url, deps) })
+  chrome.action.onClicked.addListener((tab: { url?: string }) => {
+    void handleClipClick(tab?.url, deps)
+    // I-1: バッジ '…' 固着ウォッチドッグ。正常フローでは content が pendingCreate を
+    // 実行前クリアするため、発火時には pendingCreate が無く no-op になる。
+    setTimeout(() => void resetStuckClip(deps), PENDING_TTL_MS)
+  })
   chrome.runtime.onMessage.addListener((msg: unknown, sender: { id?: string }) => {
     if (sender.id !== chrome.runtime.id) return
     const m = msg as { type?: string; ok?: boolean } | null

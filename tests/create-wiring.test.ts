@@ -47,4 +47,12 @@ describe('handlePendingCreate', () => {
     expect(env.removed).toEqual(['pendingCreate'])
     expect(env.sent).toEqual([])
   })
+
+  it('reports failure and does not throw when run rejects (M-3)', async () => {
+    const env = makeEnv({ urls: ['https://a/'], ts: 1000 }, 1500)
+    const run = vi.fn(async () => { throw new Error('dom blew up') })
+    await expect(handlePendingCreate(env, run)).resolves.toBeUndefined()
+    expect(env.removed).toEqual(['pendingCreate'])
+    expect(env.sent).toEqual([{ type: CREATE_RESULT_MESSAGE, ok: false }])
+  })
 })
