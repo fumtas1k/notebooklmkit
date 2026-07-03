@@ -4,7 +4,7 @@ import {
   getSourceUrlInput, getSourceSubmitButton,
 } from '../src/content/selectors'
 
-describe('source-flow selectors (provisional)', () => {
+describe('source-flow selectors', () => {
   beforeEach(() => { document.body.innerHTML = '' })
 
   it('getAddSourceButton finds a button by aria-label', () => {
@@ -30,6 +30,13 @@ describe('source-flow selectors (provisional)', () => {
     expect(getAddSourceButton()).toBeNull()
   })
 
+  it('getAddSourceButton prefers the stable add-source-button class', () => {
+    document.body.innerHTML = `
+      <button aria-label="ソースを追加">別ボタン</button>
+      <button class="add-source-button" aria-label="ソースを追加"><span>add ソースを追加</span></button>`
+    expect(getAddSourceButton()?.classList.contains('add-source-button')).toBe(true)
+  })
+
   it('getSourceDialog returns the mat dialog container', () => {
     document.body.innerHTML = `<mat-dialog-container>x</mat-dialog-container>`
     expect(getSourceDialog()).not.toBeNull()
@@ -45,6 +52,40 @@ describe('source-flow selectors (provisional)', () => {
     expect(getWebsiteChip(dialog)?.textContent).toContain('Website')
   })
 
+  it('getWebsiteChip matches the real-DOM website drop-zone button', () => {
+    const dialog = document.createElement('div')
+    dialog.innerHTML = `
+      <button class="drop-zone-icon-button"><span>ファイルをアップロード</span></button>
+      <button class="drop-zone-icon-button"><span>ウェブサイト</span></button>`
+    expect(getWebsiteChip(dialog)?.classList.contains('drop-zone-icon-button')).toBe(true)
+    expect(getWebsiteChip(dialog)?.textContent).toContain('ウェブサイト')
+  })
+
+  it('getWebsiteChip ignores bare buttons even if they contain website text', () => {
+    const dialog = document.createElement('div')
+    // 種別チップでない裸 button（例: ヘルプリンク）は候補外。旧候補（裸 button）では
+    // 誤マッチしていたケースの回帰テスト。
+    dialog.innerHTML = `<button class="help-link">Learn more about website sources</button>`
+    expect(getWebsiteChip(dialog)).toBeNull()
+  })
+
+  it('getWebsiteChip returns null when only a non-drop-zone button has website text (ja)', () => {
+    const dialog = document.createElement('div')
+    // drop-zone-icon-button ではない裸 button が「ウェブサイト」テキストを含む実 DOM 想定
+    // フィクスチャ。旧候補（裸 button 込み）なら誤マッチしていたケースの回帰テスト。
+    dialog.innerHTML = `<button class="help-link">ウェブサイトのソースについて詳しく</button>`
+    expect(getWebsiteChip(dialog)).toBeNull()
+  })
+
+  it('getWebsiteChip prefers the drop-zone-icon-button chip over a non-drop-zone button with matching text', () => {
+    const dialog = document.createElement('div')
+    dialog.innerHTML = `
+      <button class="help-link">ウェブサイトのソースについて詳しく</button>
+      <button class="drop-zone-icon-button"><span>ウェブサイト</span></button>`
+    const el = getWebsiteChip(dialog)
+    expect(el?.classList.contains('drop-zone-icon-button')).toBe(true)
+  })
+
   it('getSourceUrlInput prefers url/text inputs and falls back to textarea', () => {
     const dialog = document.createElement('div')
     dialog.innerHTML = `<input type="checkbox"><input type="url">`
@@ -55,12 +96,22 @@ describe('source-flow selectors (provisional)', () => {
     expect(getSourceUrlInput(dialog)).toBeNull()
   })
 
-  it('getSourceSubmitButton matches 挿入/Insert text, then submit type', () => {
+  it('getSourceUrlInput prefers textarea[formcontrolname="urls"]', () => {
     const dialog = document.createElement('div')
-    dialog.innerHTML = `<button>キャンセル</button><button>挿入</button>`
+    dialog.innerHTML = `<input type="url"><textarea formcontrolname="urls"></textarea>`
+    const el = getSourceUrlInput(dialog)
+    expect(el?.tagName).toBe('TEXTAREA')
+    expect(el?.getAttribute('formcontrolname')).toBe('urls')
+  })
+
+  it('getSourceSubmitButton matches 挿入/Insert text only (no submit-type fallback)', () => {
+    const dialog = document.createElement('div')
+    // 実 DOM の挿入ボタンは type="button"。テキストで一致させる。
+    dialog.innerHTML = `<button type="button">キャンセル</button><button type="button">挿入</button>`
     expect(getSourceSubmitButton(dialog)?.textContent).toBe('挿入')
+    // type="submit" フォールバックは撤去したので、挿入テキストの無い submit ボタンは拾わない。
     dialog.innerHTML = `<button type="submit">Go</button>`
-    expect(getSourceSubmitButton(dialog)?.textContent).toBe('Go')
+    expect(getSourceSubmitButton(dialog)).toBeNull()
     dialog.innerHTML = `<button>キャンセル</button>`
     expect(getSourceSubmitButton(dialog)).toBeNull()
   })

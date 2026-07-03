@@ -10,12 +10,12 @@ export const SELECTORS = {
   confirmDialog: 'mat-dialog-container',
   confirmDeleteButton: 'button.primary-button',
   cancelButton: 'button.tertiary-button',
-  // ---- 以下 Phase 2（ソース追加フロー）。実 DOM 調査は未実施の暫定セレクタ。----
-  // クラス名 churn に強いよう、テキスト / aria-label マッチング（SOURCE_TEXT）を主軸にする。
-  // 実機確認は docs/e2e-checklist-phase2.md。ズレたらこのファイルだけを直す。
+  // ---- 以下 Phase 2（ソース追加フロー）。2026-07-03 実機調査済み（requirements.md §8.6）。----
+  // クラス churn に強いよう、テキスト / aria-label マッチング（SOURCE_TEXT）を主軸にしつつ、
+  // 候補集合を安定クラス（drop-zone-icon-button 等）で絞って誤マッチを防ぐ。
+  // UI が変わったらこのファイルだけを直す。実機確認手順は docs/e2e-checklist-phase2.md §0。
   sourceDialog: 'mat-dialog-container',
-  sourceChipCandidates: 'mat-chip, .mdc-evolution-chip, [role="option"], button',
-  sourceSubmit: 'button[type="submit"]',
+  sourceChipCandidates: 'mat-chip, .mdc-evolution-chip, [role="option"], button.drop-zone-icon-button',
 } as const
 
 export function getNotebookRows(root: ParentNode = document): HTMLElement[] {
@@ -73,6 +73,7 @@ export function getAddSourceButton(root: ParentNode = document): HTMLElement | n
     (b) => !b.closest('[data-nlk]'),
   )
   return (
+    buttons.find((b) => b.classList.contains('add-source-button')) ??
     buttons.find((b) => SOURCE_TEXT.addButtonLabel.test(b.getAttribute('aria-label') ?? '')) ??
     buttons.find((b) => SOURCE_TEXT.addButtonLabel.test(b.textContent ?? '')) ??
     buttons.find((b) => SOURCE_TEXT.addButtonExact.test((b.textContent ?? '').trim())) ??
@@ -93,6 +94,7 @@ export function getWebsiteChip(dialog: HTMLElement): HTMLElement | null {
 
 export function getSourceUrlInput(dialog: HTMLElement): HTMLInputElement | HTMLTextAreaElement | null {
   return (
+    dialog.querySelector<HTMLTextAreaElement>('textarea[formcontrolname="urls"]') ??
     dialog.querySelector<HTMLInputElement>('input[type="url"]') ??
     dialog.querySelector<HTMLInputElement>('input[type="text"]') ??
     dialog.querySelector<HTMLInputElement>('input:not([type])') ??
@@ -101,9 +103,8 @@ export function getSourceUrlInput(dialog: HTMLElement): HTMLInputElement | HTMLT
 }
 
 export function getSourceSubmitButton(dialog: HTMLElement): HTMLElement | null {
+  // 実 DOM の挿入ボタンは type="button"。テキスト（ja/en）で一致させる。
+  // 死んだ button[type="submit"] フォールバックは撤去（無関係な submit の誤クリック防止）。
   const buttons = Array.from(dialog.querySelectorAll<HTMLElement>('button'))
-  return (
-    buttons.find((b) => SOURCE_TEXT.submit.test((b.textContent ?? '').trim())) ??
-    dialog.querySelector<HTMLElement>(SELECTORS.sourceSubmit)
-  )
+  return buttons.find((b) => SOURCE_TEXT.submit.test((b.textContent ?? '').trim())) ?? null
 }
