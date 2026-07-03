@@ -30,6 +30,13 @@ describe('source-flow selectors (provisional)', () => {
     expect(getAddSourceButton()).toBeNull()
   })
 
+  it('getAddSourceButton prefers the stable add-source-button class', () => {
+    document.body.innerHTML = `
+      <button aria-label="ソースを追加">別ボタン</button>
+      <button class="add-source-button" aria-label="ソースを追加"><span>add ソースを追加</span></button>`
+    expect(getAddSourceButton()?.classList.contains('add-source-button')).toBe(true)
+  })
+
   it('getSourceDialog returns the mat dialog container', () => {
     document.body.innerHTML = `<mat-dialog-container>x</mat-dialog-container>`
     expect(getSourceDialog()).not.toBeNull()
@@ -70,6 +77,14 @@ describe('source-flow selectors (provisional)', () => {
     expect(getSourceUrlInput(dialog)?.tagName).toBe('TEXTAREA')
     dialog.innerHTML = `<input type="checkbox">`
     expect(getSourceUrlInput(dialog)).toBeNull()
+  })
+
+  it('getSourceUrlInput prefers textarea[formcontrolname="urls"]', () => {
+    const dialog = document.createElement('div')
+    dialog.innerHTML = `<input type="url"><textarea formcontrolname="urls"></textarea>`
+    const el = getSourceUrlInput(dialog)
+    expect(el?.tagName).toBe('TEXTAREA')
+    expect(el?.getAttribute('formcontrolname')).toBe('urls')
   })
 
   it('getSourceSubmitButton matches 挿入/Insert text only (no submit-type fallback)', () => {

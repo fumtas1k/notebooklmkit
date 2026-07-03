@@ -72,6 +72,7 @@ export function getAddSourceButton(root: ParentNode = document): HTMLElement | n
     (b) => !b.closest('[data-nlk]'),
   )
   return (
+    buttons.find((b) => b.classList.contains('add-source-button')) ??
     buttons.find((b) => SOURCE_TEXT.addButtonLabel.test(b.getAttribute('aria-label') ?? '')) ??
     buttons.find((b) => SOURCE_TEXT.addButtonLabel.test(b.textContent ?? '')) ??
     buttons.find((b) => SOURCE_TEXT.addButtonExact.test((b.textContent ?? '').trim())) ??
@@ -92,6 +93,7 @@ export function getWebsiteChip(dialog: HTMLElement): HTMLElement | null {
 
 export function getSourceUrlInput(dialog: HTMLElement): HTMLInputElement | HTMLTextAreaElement | null {
   return (
+    dialog.querySelector<HTMLTextAreaElement>('textarea[formcontrolname="urls"]') ??
     dialog.querySelector<HTMLInputElement>('input[type="url"]') ??
     dialog.querySelector<HTMLInputElement>('input[type="text"]') ??
     dialog.querySelector<HTMLInputElement>('input:not([type])') ??
