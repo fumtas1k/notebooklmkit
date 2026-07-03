@@ -65,6 +65,7 @@ export const SOURCE_TEXT = {
   addButtonExact: /^[+＋]?\s*(追加|add)$/i,
   websiteChip: /ウェブサイト|website/i,
   submit: /挿入|insert/i,
+  createNew: /新規作成|ノートブックを新規作成|create new|new notebook/i,
 } as const
 
 // ソースパネルの「追加」ボタン。自拡張が注入した UI（data-nlk 配下）は除外する。
@@ -77,6 +78,20 @@ export function getAddSourceButton(root: ParentNode = document): HTMLElement | n
     buttons.find((b) => SOURCE_TEXT.addButtonLabel.test(b.getAttribute('aria-label') ?? '')) ??
     buttons.find((b) => SOURCE_TEXT.addButtonLabel.test(b.textContent ?? '')) ??
     buttons.find((b) => SOURCE_TEXT.addButtonExact.test((b.textContent ?? '').trim())) ??
+    null
+  )
+}
+
+// ホーム/一覧の「新規作成」ボタン。自拡張が注入した UI（data-nlk 配下）は除外する。
+// 実 DOM: button.create-new-button（aria-label="ノートブックを新規作成"）。2026-07-04 実機確認。
+export function getCreateNewButton(root: ParentNode = document): HTMLElement | null {
+  const buttons = Array.from(root.querySelectorAll<HTMLElement>('button')).filter(
+    (b) => !b.closest('[data-nlk]'),
+  )
+  return (
+    buttons.find((b) => b.classList.contains('create-new-button')) ??
+    buttons.find((b) => SOURCE_TEXT.createNew.test(b.getAttribute('aria-label') ?? '')) ??
+    buttons.find((b) => SOURCE_TEXT.createNew.test(b.textContent ?? '')) ??
     null
   )
 }

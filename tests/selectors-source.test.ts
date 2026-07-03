@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   getAddSourceButton, getSourceDialog, getWebsiteChip,
-  getSourceUrlInput, getSourceSubmitButton,
+  getSourceUrlInput, getSourceSubmitButton, getCreateNewButton,
 } from '../src/content/selectors'
 
 describe('source-flow selectors', () => {
@@ -114,5 +114,22 @@ describe('source-flow selectors', () => {
     expect(getSourceSubmitButton(dialog)).toBeNull()
     dialog.innerHTML = `<button>キャンセル</button>`
     expect(getSourceSubmitButton(dialog)).toBeNull()
+  })
+
+  it('getCreateNewButton finds the stable create-new-button class', () => {
+    document.body.innerHTML = `
+      <button>別ボタン</button>
+      <button class="create-new-button" aria-label="ノートブックを新規作成"><span>add 新規作成</span></button>`
+    expect(getCreateNewButton()?.classList.contains('create-new-button')).toBe(true)
+  })
+
+  it('getCreateNewButton falls back to aria-label / text', () => {
+    document.body.innerHTML = `<button aria-label="ノートブックを新規作成">作成</button>`
+    expect(getCreateNewButton()?.getAttribute('aria-label')).toBe('ノートブックを新規作成')
+  })
+
+  it('getCreateNewButton ignores buttons injected by this extension', () => {
+    document.body.innerHTML = `<div data-nlk="x"><button class="create-new-button">新規作成</button></div>`
+    expect(getCreateNewButton()).toBeNull()
   })
 })
