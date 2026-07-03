@@ -1,22 +1,22 @@
 # Phase 2 手動 E2E チェックリスト（タブ / URL 一括インポート）
 
-ソース追加フローの実 DOM は未調査のため、セレクタはすべて**暫定**。
-このチェックリストの最初のセクションでセレクタの実機検証を行い、
-ズレていたら `src/content/selectors.ts`（`SOURCE_TEXT` / `SELECTORS`）だけを直す。
+ソース追加フローの実 DOM は 2026-07-03 に実機確認済み（`docs/requirements.md` §8.6）。
+セレクタはテキスト / aria-label マッチを主軸に、候補を安定クラス / 属性で絞っている。
+UI が変わったら §0 で再検証し、`src/content/selectors.ts` だけを直す。
 
 準備: `npm run build` → `chrome://extensions` →「パッケージ化されていない拡張機能を読み込む」→ `dist/`。
 破棄してよいテスト用ノートブックを1つ用意する。
 
-## 0. 暫定セレクタの実機検証（最初に必ず実施）
+## 0. セレクタの実機再検証（UI 変更が疑われるときに実施）
 
-ノートブックページ（`/notebook/<id>`）を開き、DevTools で以下を確認:
+2026-07-03 時点で確認済みの実 DOM。UI 変更が疑われたら DevTools で以下を再確認する:
 
-- [ ] ソース追加ボタン: `aria-label` またはテキストが「ソースを追加」/「追加」/ "Add source" に一致する `button` が存在する
-- [ ] それをクリックすると `mat-dialog-container` が出る
-- [ ] ダイアログ内に「ウェブサイト」/ "Website" のテキストを持つチップ（`mat-chip` / `[role="option"]` / `button` のいずれか）がある
-- [ ] チップクリック後、ダイアログ内に URL 入力欄（`input` または `textarea`）が出る
-- [ ] 「挿入」/ "Insert" ボタン（または `button[type="submit"]`）があり、URL 入力で有効化される
-- [ ] 挿入後にダイアログが閉じ、ソース一覧に追加される
+- [x] ソース追加ボタン: `button.add-source-button`（`aria-label="ソースを追加"`）が左ソースパネルにある
+- [x] クリックで `mat-dialog-container` が出る
+- [x] 種別ボタン「ウェブサイト」は `button.drop-zone-icon-button`（4種別共通クラス）
+- [x] チップクリック後、`textarea[formcontrolname="urls"]`（placeholder「リンクを貼り付ける」）が出る
+- [x] 「挿入」ボタンは `button[type="button"]`（テキスト「挿入」/ "Insert"）で URL 入力により有効化される
+- [x] 挿入後にダイアログが閉じ、ソース一覧に追加される
 
 ズレがあった場合: `selectors.ts` を修正 → 再ビルド → 本セクションを再確認。
 

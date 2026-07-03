@@ -10,9 +10,10 @@ export const SELECTORS = {
   confirmDialog: 'mat-dialog-container',
   confirmDeleteButton: 'button.primary-button',
   cancelButton: 'button.tertiary-button',
-  // ---- 以下 Phase 2（ソース追加フロー）。実 DOM 調査は未実施の暫定セレクタ。----
-  // クラス名 churn に強いよう、テキスト / aria-label マッチング（SOURCE_TEXT）を主軸にする。
-  // 実機確認は docs/e2e-checklist-phase2.md。ズレたらこのファイルだけを直す。
+  // ---- 以下 Phase 2（ソース追加フロー）。2026-07-03 実機調査済み（requirements.md §8.6）。----
+  // クラス churn に強いよう、テキスト / aria-label マッチング（SOURCE_TEXT）を主軸にしつつ、
+  // 候補集合を安定クラス（drop-zone-icon-button 等）で絞って誤マッチを防ぐ。
+  // UI が変わったらこのファイルだけを直す。実機確認手順は docs/e2e-checklist-phase2.md §0。
   sourceDialog: 'mat-dialog-container',
   sourceChipCandidates: 'mat-chip, .mdc-evolution-chip, [role="option"], button.drop-zone-icon-button',
 } as const
