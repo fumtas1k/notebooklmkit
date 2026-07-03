@@ -67,7 +67,7 @@ issue #47: alarms ウォッチドッグ / tabId 別バッジ
 ## 4. i18n・権限
 
 - [ ] Chrome の UI 言語が日本語なら日本語、それ以外は英語の文言になる
-- [ ] `chrome://extensions` で権限が「notebooklm.google.com のデータの読み取りと変更」+「タブ」相当のみである
+- [ ] `chrome://extensions` で権限が「notebooklm.google.com のデータの読み取りと変更」+「タブ」+「ストレージ」+「アラーム」相当のみである
 
 ## 既知の制限
 
