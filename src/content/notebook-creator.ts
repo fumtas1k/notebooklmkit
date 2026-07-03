@@ -1,5 +1,4 @@
 import type { waitFor as WaitFor } from './dom-utils'
-import { AbortError } from './dom-utils'
 
 export interface CreatorDeps {
   getCreateNewButton(): HTMLElement | null
@@ -46,12 +45,12 @@ export async function createNotebookWithUrls(
       return (btn as HTMLButtonElement).disabled ? null : btn
     }, { timeout, signal })
     deps.click(submit)
-    // ⑤ 掴んだダイアログが DOM から外れる = 完了
+    // ⑤ 掴んだダイアログが DOM から外れる = 完了。挿入クリック後の完了待ちには signal を
+    // 渡さない（コミット後に中断すると、実際には作られたノートブックを失敗と誤記録し得るため）。
     await w(() => (opened.dialog.isConnected ? null : true), { timeout })
     return true
-  } catch (err) {
-    // タイムアウト / 中断 / 想定外 → 失敗（安全側）
-    void (err instanceof AbortError)
+  } catch {
+    // タイムアウト / 中断（AbortError）/ 想定外 DOM → いずれも失敗（false）として安全側に倒す。
     return false
   }
 }
