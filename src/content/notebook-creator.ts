@@ -15,6 +15,9 @@ export interface CreatorDeps {
 // 「新規作成 → ウェブサイト → URL 挿入」で新規ノートブックを1つ作る。
 // 複数 URL は改行連結で1回挿入（NotebookLM の URL 入力欄は複数 URL を1回受付）。
 // 失敗（要素不在 / タイムアウト / 中断）は false を返す（呼び出し側が badge '!'）。
+// 注: opts.signal は deleter/importer と同じ中断規約の布石。現状クリップ経路
+// （defaultCreateRunner）は fire-and-forget で signal を渡さないため未配線（reserved）。
+// 将来 start() の dispose ライフサイクルと結ぶ際に配線する。
 export async function createNotebookWithUrls(
   urls: string[],
   deps: CreatorDeps,

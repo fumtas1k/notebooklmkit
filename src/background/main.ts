@@ -115,8 +115,12 @@ if (typeof chrome !== 'undefined' && chrome.action?.onClicked) {
   }
   chrome.action.onClicked.addListener((tab: { url?: string }) => {
     void handleClipClick(tab?.url, deps)
-    // I-1: バッジ '…' 固着ウォッチドッグ。正常フローでは content が pendingCreate を
-    // 実行前クリアするため、発火時には pendingCreate が無く no-op になる。
+    // I-1: バッジ '…' 固着ウォッチドッグ（best-effort）。正常フローでは content が
+    // pendingCreate を実行前クリアするため、発火時には pendingCreate が無く no-op。
+    // 注意: MV3 の SW はアイドルで終了され得るため、この 60s タイマーは発火せず
+    // 失われることがある（content が走らないケースほど SW も終了しやすく空振りする）。
+    // 確実にするには chrome.alarms へ置換が必要（要 'alarms' 権限。follow-up issue）。
+    // 実害はバッジが '…' のまま残る程度で、次回クリップ時に上書きされ自己回復する。
     setTimeout(() => void resetStuckClip(deps), PENDING_TTL_MS)
   })
   chrome.runtime.onMessage.addListener((msg: unknown, sender: { id?: string }) => {
