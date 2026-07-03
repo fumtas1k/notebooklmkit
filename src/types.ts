@@ -47,3 +47,23 @@ export interface TabInfo {
 
 // content ↔ background 間の「タブ一覧をくれ」メッセージ種別。
 export const LIST_TABS_MESSAGE = 'nlk:list-tabs'
+
+// F2-2（ワンクリックインポート）: 最後に開いたノートブック（storage.local, 永続）。
+export interface LastNotebook {
+  id: string
+  title: string
+}
+
+// F2-2: 実行待ちの1件（storage.local）。実行後クリア＋ts 古さガードで残留を無視する。
+export interface PendingImport {
+  notebookId: string
+  url: string
+  ts: number
+}
+
+// background → 対象ノートブックタブ: pendingImport を実行せよ（既存タブ経路）。
+export const RUN_PENDING_MESSAGE = 'nlk:run-pending'
+// content → background: インポート結果（バッジ更新用）。
+export const IMPORT_RESULT_MESSAGE = 'nlk:import-result'
+// pendingImport の有効期限（ms）。これを超えた残留は実行せず掃除する。
+export const PENDING_TTL_MS = 60000
