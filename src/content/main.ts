@@ -4,7 +4,10 @@ import {
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton,
 } from './selectors'
-import { makeTarget, type NotebookTarget } from '../types'
+import {
+  makeTarget, type NotebookTarget,
+  IMPORT_RESULT_MESSAGE, RUN_PENDING_MESSAGE, type ImportResult,
+} from '../types'
 import { SelectionStore } from './selection'
 import { detectLang, createT } from './i18n'
 import { injectRowCheckboxes, CHECKBOX_ATTR } from './ui/row-checkbox'
@@ -15,6 +18,8 @@ import { deleteNotebooks, type DeleterDeps } from './deleter'
 import { importUrls, type ImporterDeps } from './importer'
 import { listOpenTabs } from './tabs-bridge'
 import { waitFor, safeClick, setInputValue } from './dom-utils'
+import { parseNotebookId, parseNotebookTitle } from './notebook-id'
+import { handlePending, type PendingEnv } from './pending-import'
 
 export const VERSION = '0.1.0'
 
@@ -175,10 +180,40 @@ export function init(root: ParentNode = document): () => void {
   }
 }
 
+export interface ImportEnv extends PendingEnv {
+  getPathname(): string
+  getTitle(): string
+  storageSet(items: Record<string, unknown>): Promise<void>
+  addMessageListener(handler: (msg: unknown) => void): () => void
+  sendMessage(message: unknown): void
+}
+
+// 実 chrome / location / document への既定配線。chrome が無い環境（jsdom）でも
+// 安全に no-op になるようガードする（既存の routing テストを壊さないため）。
+function defaultImportEnv(): ImportEnv {
+  const c = (globalThis as { chrome?: any }).chrome
+  return {
+    getPathname: () => (typeof location !== 'undefined' ? location.pathname : ''),
+    getTitle: () => (typeof document !== 'undefined' ? document.title : ''),
+    storageGet: (k) => c?.storage?.local?.get(k) ?? Promise.resolve({}),
+    storageSet: (i) => c?.storage?.local?.set(i) ?? Promise.resolve(),
+    storageRemove: (k) => c?.storage?.local?.remove(k) ?? Promise.resolve(),
+    now: () => Date.now(),
+    addMessageListener: (h) => {
+      const om = c?.runtime?.onMessage
+      if (!om) return () => {}
+      const listener = (msg: unknown) => h(msg)
+      om.addListener(listener)
+      return () => om.removeListener(listener)
+    },
+    sendMessage: (m) => { void c?.runtime?.sendMessage?.(m) },
+  }
+}
+
 // ノートブックページ（/notebook/<id>）側の配線。インポートパネルを載せる。
 // ノートブックページの DOM 構造には依存しない（パネルは body 固定配置、
 // ソース追加フローの要素は importer が waitFor で都度探す）。
-export function initImport(root: ParentNode = document): () => void {
+export function initImport(root: ParentNode = document, env: ImportEnv = defaultImportEnv()): () => void {
   const t = createT(detectLang())
   let currentAbort: AbortController | null = null
   let importing = false
@@ -192,12 +227,13 @@ export function initImport(root: ParentNode = document): () => void {
     },
   })
 
-  async function runImport(urls: string[]): Promise<void> {
-    if (importing || urls.length === 0) return
+  async function runImport(urls: string[]): Promise<ImportResult | null> {
+    if (importing || urls.length === 0) return null
     importing = true
     const ac = new AbortController()
     currentAbort = ac
     panel.setBusy(true)
+    let result: ImportResult | null = null
     try {
       const deps: ImporterDeps = {
         getAddSourceButton: () => getAddSourceButton(root),
@@ -209,7 +245,7 @@ export function initImport(root: ParentNode = document): () => void {
         click: (el) => { safeClick(el) },
         waitFor,
       }
-      const result = await importUrls(urls, deps, {
+      result = await importUrls(urls, deps, {
         signal: ac.signal,
         onProgress: (p) => panel.setProgress(t('importProgress', { done: p.completed, total: p.total })),
       })
@@ -233,11 +269,36 @@ export function initImport(root: ParentNode = document): () => void {
       currentAbort = null
       importing = false
     }
+    return result
   }
+
+  // F2-2: 現在のノートブック id を storage に記録（ツールバーインポートの対象特定に使う）。
+  const notebookId = parseNotebookId(env.getPathname())
+  if (notebookId) {
+    void env.storageSet({ lastNotebook: { id: notebookId, title: parseNotebookTitle(env.getTitle()) } })
+  }
+
+  // F2-2: pendingImport を1件インポートし、結果を background に返す。
+  const runPending = () =>
+    handlePending(
+      notebookId,
+      env,
+      async (url) => {
+        const r = await runImport([url])
+        return !!r && r.failed.length === 0 && !r.aborted
+      },
+      (ok) => env.sendMessage({ type: IMPORT_RESULT_MESSAGE, ok }),
+    )
+
+  void runPending() // 新規タブ mount 経路
+  const unsub = env.addMessageListener((msg) => {
+    if ((msg as { type?: string } | null)?.type === RUN_PENDING_MESSAGE) void runPending() // 既存タブ経路
+  })
 
   return () => {
     // SPA 遷移等で teardown されたら進行中のインポートも止める（issue #16 と同じ規約）
     currentAbort?.abort()
+    unsub()
     panel.destroy()
   }
 }
