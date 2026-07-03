@@ -14,7 +14,7 @@ function makeDeps(over: Partial<ActionDeps> & { lastNotebook?: unknown } = {}): 
     storageSet: set,
     queryTabs: over.queryTabs ?? vi.fn(async () => []),
     createTab: vi.fn(async (p) => { created.push(p); return {} }),
-    sendTabMessage: vi.fn(async (id, msg) => { sent.push({ id, msg }) }),
+    sendTabMessage: over.sendTabMessage ?? vi.fn(async (id, msg) => { sent.push({ id, msg }) }),
     setBadge: (t: string) => { badges.push(t) },
     now: () => 1000,
   }
@@ -58,6 +58,16 @@ describe('handleActionClick', () => {
     expect(d.set).toHaveBeenCalledWith({ pendingImport: { notebookId: 'a', url: 'https://x.example/', ts: 1000 } })
     expect(d.created).toEqual([{ url: 'https://notebooklm.google.com/notebook/a', active: false }])
     expect(d.sent).toEqual([])
+  })
+
+  it('falls back to "!" badge without throwing when sendTabMessage rejects (e.g. no receiver)', async () => {
+    const d = makeDeps({
+      lastNotebook: { id: 'a', title: 'A' },
+      queryTabs: vi.fn(async () => [{ id: 7, url: 'https://notebooklm.google.com/notebook/a' }]),
+      sendTabMessage: vi.fn(async () => { throw new Error('Could not establish connection. Receiving end does not exist.') }),
+    })
+    await expect(handleActionClick('https://x.example/', d)).resolves.toBeUndefined()
+    expect(d.badges).toContain('!')
   })
 })
 

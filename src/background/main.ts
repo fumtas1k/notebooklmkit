@@ -83,19 +83,26 @@ export async function handleActionClick(clickedUrl: string | undefined, d: Actio
   await d.storageSet({ pendingImport: pending })
   d.setBadge('…')
 
-  const tabs = await d.queryTabs({ url: `${NOTEBOOK_HOME}*` })
-  const existing = tabs.find((t) => {
-    if (t.id === undefined || !t.url) return false
-    try {
-      return parseNotebookId(new URL(t.url).pathname) === id
-    } catch {
-      return false
+  // ここから先は tabs 操作（実 chrome では sendTabMessage が受信側リスナー不在時に
+  // reject し得るなど、失敗が起こり得る）。失敗してもバッジを '!' に戻して正常終了させ、
+  // '…' 固着（リカバリ不能）を防ぐ。
+  try {
+    const tabs = await d.queryTabs({ url: `${NOTEBOOK_HOME}*` })
+    const existing = tabs.find((t) => {
+      if (t.id === undefined || !t.url) return false
+      try {
+        return parseNotebookId(new URL(t.url).pathname) === id
+      } catch {
+        return false
+      }
+    })
+    if (existing?.id !== undefined) {
+      await d.sendTabMessage(existing.id, { type: RUN_PENDING_MESSAGE })
+    } else {
+      await d.createTab({ url: notebookUrl(id), active: false })
     }
-  })
-  if (existing?.id !== undefined) {
-    await d.sendTabMessage(existing.id, { type: RUN_PENDING_MESSAGE })
-  } else {
-    await d.createTab({ url: notebookUrl(id), active: false })
+  } catch {
+    d.setBadge('!')
   }
 }
 
