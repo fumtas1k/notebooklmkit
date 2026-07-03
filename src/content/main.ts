@@ -2,9 +2,9 @@ import {
   getNotebookRows, getRowIdentity, findRowByIdentity, getRowKey,
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
   getAddSourceButton, getSourceDialog, getWebsiteChip,
-  getSourceUrlInput, getSourceSubmitButton,
+  getSourceUrlInput, getSourceSubmitButton, getCreateNewButton,
 } from './selectors'
-import { makeTarget, type NotebookTarget } from '../types'
+import { makeTarget, type NotebookTarget, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type PendingCreate } from '../types'
 import { SelectionStore } from './selection'
 import { detectLang, createT } from './i18n'
 import { injectRowCheckboxes, CHECKBOX_ATTR } from './ui/row-checkbox'
@@ -13,6 +13,7 @@ import { mountImportPanel } from './ui/import-panel'
 import { confirmDeletion } from './confirm-dialog'
 import { deleteNotebooks, type DeleterDeps } from './deleter'
 import { importUrls, type ImporterDeps } from './importer'
+import { createNotebookWithUrls } from './notebook-creator'
 import { listOpenTabs } from './tabs-bridge'
 import { waitFor, safeClick, setInputValue } from './dom-utils'
 
@@ -262,6 +263,64 @@ function detectPage(root: ParentNode, pathname: string): PageKind {
   return 'none'
 }
 
+export interface CreateEnv {
+  storageGet(key: string): Promise<Record<string, unknown>>
+  storageRemove(key: string): Promise<void>
+  now(): number
+  sendMessage(message: unknown): void
+}
+
+// pendingCreate を評価し、TTL 内なら storage から消して run(urls) を実行、結果を
+// CREATE_RESULT_MESSAGE で background に返す。実行前クリアで二重実行を防ぐ。
+export async function handlePendingCreate(
+  env: CreateEnv,
+  run: (urls: string[]) => Promise<boolean>,
+): Promise<void> {
+  const got = await env.storageGet('pendingCreate')
+  const pending = got.pendingCreate as PendingCreate | undefined
+  if (!pending) return
+  if (env.now() - pending.ts > PENDING_TTL_MS) {
+    await env.storageRemove('pendingCreate')
+    return
+  }
+  await env.storageRemove('pendingCreate')
+  // M-3: run が同期/非同期どちらで throw しても unhandled rejection にせず、
+  // 結果メッセージを必ず送る（storage は実行前に既にクリア済みなので二重実行は起きない）。
+  let ok: boolean
+  try {
+    ok = await run(pending.urls)
+  } catch (err) {
+    console.error('notebooklmkit: unexpected error during pending create', err)
+    ok = false
+  }
+  env.sendMessage({ type: CREATE_RESULT_MESSAGE, ok })
+}
+
+// 実 chrome / storage への既定配線。chrome が無い環境（jsdom）でも安全に no-op になる。
+function defaultCreateEnv(): CreateEnv {
+  const c = (globalThis as { chrome?: any }).chrome
+  return {
+    storageGet: (k) => c?.storage?.local?.get(k) ?? Promise.resolve({}),
+    storageRemove: (k) => c?.storage?.local?.remove(k) ?? Promise.resolve(),
+    now: () => Date.now(),
+    sendMessage: (m) => { void c?.runtime?.sendMessage?.(m) },
+  }
+}
+
+function defaultCreateRunner(root: ParentNode): (urls: string[]) => Promise<boolean> {
+  return (urls) =>
+    createNotebookWithUrls(urls, {
+      getCreateNewButton: () => getCreateNewButton(root),
+      getSourceDialog: () => getSourceDialog(),
+      getWebsiteChip,
+      getUrlInput: getSourceUrlInput,
+      getSubmitButton: getSourceSubmitButton,
+      setInputValue,
+      click: (el) => { safeClick(el) },
+      waitFor,
+    })
+}
+
 // NotebookLM は pushState 遷移でイベントが取れない Angular SPA のため、
 // DOM 変化のたびにページ種別を判定して UI を掛け替える常駐ルーター。
 // 判定は pathname の前方一致と querySelector 1回だけで軽量。
@@ -270,6 +329,8 @@ function detectPage(root: ParentNode, pathname: string): PageKind {
 export function start(
   root: ParentNode = document,
   getPath: () => string = () => location.pathname,
+  env: CreateEnv = defaultCreateEnv(),
+  run: (urls: string[]) => Promise<boolean> = defaultCreateRunner(root),
 ): () => void {
   let current: PageKind = 'none'
   let dispose: (() => void) | null = null
@@ -294,6 +355,8 @@ export function start(
   }
 
   apply()
+  // F2-2: ツールバー起動でセットされた pendingCreate を、この content script ロード時に一度だけ実行。
+  void handlePendingCreate(env, run)
   const target: Element =
     (root instanceof Document ? (root.documentElement ?? root.body) : (root as Element)) ??
     document.documentElement

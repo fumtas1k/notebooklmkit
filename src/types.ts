@@ -47,3 +47,15 @@ export interface TabInfo {
 
 // content ↔ background 間の「タブ一覧をくれ」メッセージ種別。
 export const LIST_TABS_MESSAGE = 'nlk:list-tabs'
+
+// F2-2（現ページから新規ノートブック作成）: 実行待ちの URL 群（storage.local）。
+// 実行後クリア＋ts 古さガードで残留を無視する。
+export interface PendingCreate {
+  urls: string[]
+  ts: number
+}
+
+// content → background: 新規ノートブック作成の結果（バッジ更新用）。
+export const CREATE_RESULT_MESSAGE = 'nlk:create-result'
+// pendingCreate の有効期限（ms）。超過分は実行せず掃除する。
+export const PENDING_TTL_MS = 60000

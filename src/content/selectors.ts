@@ -65,6 +65,7 @@ export const SOURCE_TEXT = {
   addButtonExact: /^[+＋]?\s*(追加|add)$/i,
   websiteChip: /ウェブサイト|website/i,
   submit: /挿入|insert/i,
+  createNew: /新規作成|ノートブックを新規作成|create new|new notebook/i,
 } as const
 
 // ソースパネルの「追加」ボタン。自拡張が注入した UI（data-nlk 配下）は除外する。
@@ -81,6 +82,20 @@ export function getAddSourceButton(root: ParentNode = document): HTMLElement | n
   )
 }
 
+// ホーム/一覧の「新規作成」ボタン。自拡張が注入した UI（data-nlk 配下）は除外する。
+// 実 DOM: button.create-new-button（aria-label="ノートブックを新規作成"）。2026-07-04 実機確認。
+export function getCreateNewButton(root: ParentNode = document): HTMLElement | null {
+  const buttons = Array.from(root.querySelectorAll<HTMLElement>('button')).filter(
+    (b) => !b.closest('[data-nlk]'),
+  )
+  return (
+    buttons.find((b) => b.classList.contains('create-new-button')) ??
+    buttons.find((b) => SOURCE_TEXT.createNew.test(b.getAttribute('aria-label') ?? '')) ??
+    buttons.find((b) => SOURCE_TEXT.createNew.test(b.textContent ?? '')) ??
+    null
+  )
+}
+
 export function getSourceDialog(root: ParentNode = document): HTMLElement | null {
   return root.querySelector<HTMLElement>(SELECTORS.sourceDialog)
 }
@@ -92,13 +107,15 @@ export function getWebsiteChip(dialog: HTMLElement): HTMLElement | null {
   return candidates.find((el) => SOURCE_TEXT.websiteChip.test(el.textContent ?? '')) ?? null
 }
 
+// ソース追加ダイアログの URL 貼り付け欄。実 DOM（2026-07-03/-04 確認）では
+// textarea[formcontrolname="urls"]。ダイアログ上部には常に「ウェブで新しいソースを検索」の
+// 検索欄 textarea[formcontrolname="discoverSourcesQuery"] が存在するため、bare textarea
+// フォールバックは使わない（検索欄を誤取得すると URL が貼り付け欄に入らず、挿入ボタンが
+// 有効化されずタイムアウトする）。urls 欄が未描画の間は null を返し、呼び出し側の waitFor が待つ。
 export function getSourceUrlInput(dialog: HTMLElement): HTMLInputElement | HTMLTextAreaElement | null {
   return (
     dialog.querySelector<HTMLTextAreaElement>('textarea[formcontrolname="urls"]') ??
-    dialog.querySelector<HTMLInputElement>('input[type="url"]') ??
-    dialog.querySelector<HTMLInputElement>('input[type="text"]') ??
-    dialog.querySelector<HTMLInputElement>('input:not([type])') ??
-    dialog.querySelector<HTMLTextAreaElement>('textarea')
+    dialog.querySelector<HTMLInputElement>('input[type="url"]')
   )
 }
 

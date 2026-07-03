@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   getAddSourceButton, getSourceDialog, getWebsiteChip,
-  getSourceUrlInput, getSourceSubmitButton,
+  getSourceUrlInput, getSourceSubmitButton, getCreateNewButton,
 } from '../src/content/selectors'
 
 describe('source-flow selectors', () => {
@@ -86,12 +86,10 @@ describe('source-flow selectors', () => {
     expect(el?.classList.contains('drop-zone-icon-button')).toBe(true)
   })
 
-  it('getSourceUrlInput prefers url/text inputs and falls back to textarea', () => {
+  it('getSourceUrlInput matches textarea[formcontrolname="urls"], else input[type=url]', () => {
     const dialog = document.createElement('div')
     dialog.innerHTML = `<input type="checkbox"><input type="url">`
     expect((getSourceUrlInput(dialog) as HTMLInputElement).type).toBe('url')
-    dialog.innerHTML = `<textarea></textarea>`
-    expect(getSourceUrlInput(dialog)?.tagName).toBe('TEXTAREA')
     dialog.innerHTML = `<input type="checkbox">`
     expect(getSourceUrlInput(dialog)).toBeNull()
   })
@@ -104,6 +102,19 @@ describe('source-flow selectors', () => {
     expect(el?.getAttribute('formcontrolname')).toBe('urls')
   })
 
+  it('getSourceUrlInput does NOT grab the discoverSourcesQuery search box', () => {
+    // ダイアログ上部の「ウェブで新しいソースを検索」検索欄（discoverSourcesQuery）は
+    // 常在する。URL 貼り付け欄が未描画の間に検索欄を誤取得しないこと（実機バグの回帰）。
+    const dialog = document.createElement('div')
+    dialog.innerHTML = `<textarea formcontrolname="discoverSourcesQuery"></textarea>`
+    expect(getSourceUrlInput(dialog)).toBeNull()
+    // 貼り付け欄が現れたら、検索欄ではなくそちらを返す
+    dialog.innerHTML = `
+      <textarea formcontrolname="discoverSourcesQuery"></textarea>
+      <textarea formcontrolname="urls"></textarea>`
+    expect(getSourceUrlInput(dialog)?.getAttribute('formcontrolname')).toBe('urls')
+  })
+
   it('getSourceSubmitButton matches 挿入/Insert text only (no submit-type fallback)', () => {
     const dialog = document.createElement('div')
     // 実 DOM の挿入ボタンは type="button"。テキストで一致させる。
@@ -114,5 +125,22 @@ describe('source-flow selectors', () => {
     expect(getSourceSubmitButton(dialog)).toBeNull()
     dialog.innerHTML = `<button>キャンセル</button>`
     expect(getSourceSubmitButton(dialog)).toBeNull()
+  })
+
+  it('getCreateNewButton finds the stable create-new-button class', () => {
+    document.body.innerHTML = `
+      <button>別ボタン</button>
+      <button class="create-new-button" aria-label="ノートブックを新規作成"><span>add 新規作成</span></button>`
+    expect(getCreateNewButton()?.classList.contains('create-new-button')).toBe(true)
+  })
+
+  it('getCreateNewButton falls back to aria-label / text', () => {
+    document.body.innerHTML = `<button aria-label="ノートブックを新規作成">作成</button>`
+    expect(getCreateNewButton()?.getAttribute('aria-label')).toBe('ノートブックを新規作成')
+  })
+
+  it('getCreateNewButton ignores buttons injected by this extension', () => {
+    document.body.innerHTML = `<div data-nlk="x"><button class="create-new-button">新規作成</button></div>`
+    expect(getCreateNewButton()).toBeNull()
   })
 })
