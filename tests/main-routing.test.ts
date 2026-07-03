@@ -60,6 +60,20 @@ describe('start routing', () => {
     dispose()
     expect(document.querySelector('[data-nlk="import-fab"]')).toBeNull()
   })
+
+  it('does not tear down the list UI when the container detaches transiently without navigation', async () => {
+    document.body.innerHTML = LIST
+    const dispose = start(document, () => '/')
+    expect(document.querySelector('[data-nlk="action-bar"]')).not.toBeNull()
+
+    document.querySelector('.all-projects-container')!.remove()
+    await flush()
+
+    // pathname 不変のため teardown されない（issue #38 のガード）
+    expect(document.querySelector('[data-nlk="action-bar"]')).not.toBeNull()
+
+    dispose()
+  })
 })
 
 describe('initImport wiring', () => {

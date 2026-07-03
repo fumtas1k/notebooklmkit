@@ -16,7 +16,7 @@ function stubChrome() {
   const addListener = vi.fn()
   const query = vi.fn()
   vi.stubGlobal('chrome', {
-    runtime: { onMessage: { addListener } },
+    runtime: { id: 'test-extension-id', onMessage: { addListener } },
     tabs: { query },
   })
   return { addListener, query }
@@ -39,7 +39,7 @@ describe('background onMessage listener', () => {
   it('queries tabs in the sender window and responds with importable tabs only', async () => {
     const { listener, query } = await loadListener()
     const sendResponse = vi.fn()
-    const sender = { tab: { windowId: 42 } } as chrome.runtime.MessageSender
+    const sender = { id: 'test-extension-id', tab: { windowId: 42 } } as chrome.runtime.MessageSender
 
     const result = listener({ type: LIST_TABS_MESSAGE }, sender, sendResponse)
 
@@ -61,8 +61,9 @@ describe('background onMessage listener', () => {
   it('falls back to currentWindow when sender has no tab', async () => {
     const { listener, query } = await loadListener()
     const sendResponse = vi.fn()
+    const sender = { id: 'test-extension-id' } as chrome.runtime.MessageSender
 
-    listener({ type: LIST_TABS_MESSAGE }, {} as chrome.runtime.MessageSender, sendResponse)
+    listener({ type: LIST_TABS_MESSAGE }, sender, sendResponse)
 
     expect(query).toHaveBeenCalledWith({ currentWindow: true }, expect.any(Function))
   })
@@ -76,6 +77,17 @@ describe('background onMessage listener', () => {
     expect(result).toBe(false)
     expect(query).not.toHaveBeenCalled()
     expect(sendResponse).not.toHaveBeenCalled()
+  })
+
+  it('ignores messages from a different extension even with a valid type', async () => {
+    const { listener, query } = await loadListener()
+    const sendResponse = vi.fn()
+    const sender = { id: 'other-extension' } as chrome.runtime.MessageSender
+
+    const result = listener({ type: LIST_TABS_MESSAGE }, sender, sendResponse)
+
+    expect(result).toBe(false)
+    expect(query).not.toHaveBeenCalled()
   })
 })
 

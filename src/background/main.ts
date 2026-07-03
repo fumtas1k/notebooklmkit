@@ -24,6 +24,9 @@ export function toImportableTabs(tabs: { title?: string; url?: string }[]): TabI
 if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse): boolean => {
     if ((message as { type?: string } | null)?.type !== LIST_TABS_MESSAGE) return false
+    // 多層防御: 自拡張以外からのメッセージには応答しない（externally_connectable
+    // 未宣言の現構成では他所から届かないはずだが、将来の設定変更に備える）
+    if (sender.id !== chrome.runtime.id) return false
     // 要求元（NotebookLM タブ）と同じウィンドウのタブを返す
     const windowId = sender.tab?.windowId
     // sender.tab が無い場合（popup などタブ以外のコンテキストからのメッセージ時）は現在のウィンドウにフォールバック

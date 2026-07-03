@@ -23,13 +23,19 @@ export function mountImportPanel(opts: {
   host.setAttribute('data-nlk', 'import-host')
 
   const fab = document.createElement('button')
+  fab.type = 'button'
   fab.className = 'nlk-import-fab'
   fab.setAttribute('data-nlk', 'import-fab')
   fab.textContent = t('importFab')
+  fab.setAttribute('aria-controls', 'nlk-import-panel')
+  fab.setAttribute('aria-expanded', 'false')
 
   const panel = document.createElement('div')
+  panel.id = 'nlk-import-panel'
   panel.className = 'nlk-import-panel'
   panel.setAttribute('data-nlk', 'import-panel')
+  panel.setAttribute('role', 'dialog')
+  panel.setAttribute('aria-label', t('importTitle'))
   panel.hidden = true
 
   const title = document.createElement('div')
@@ -45,6 +51,7 @@ export function mountImportPanel(opts: {
   counts.setAttribute('data-nlk', 'import-counts')
 
   const loadTabsBtn = document.createElement('button')
+  loadTabsBtn.type = 'button'
   loadTabsBtn.setAttribute('data-nlk', 'import-load-tabs')
   loadTabsBtn.textContent = t('loadTabs')
 
@@ -54,6 +61,7 @@ export function mountImportPanel(opts: {
   tabList.hidden = true
 
   const addTabsBtn = document.createElement('button')
+  addTabsBtn.type = 'button'
   addTabsBtn.setAttribute('data-nlk', 'import-add-tabs')
   addTabsBtn.textContent = t('addSelectedTabs')
   addTabsBtn.hidden = true
@@ -62,9 +70,11 @@ export function mountImportPanel(opts: {
   progress.setAttribute('data-nlk', 'import-progress')
 
   const runBtn = document.createElement('button')
+  runBtn.type = 'button'
   runBtn.setAttribute('data-nlk', 'import-run')
 
   const stopBtn = document.createElement('button')
+  stopBtn.type = 'button'
   stopBtn.setAttribute('data-nlk', 'import-stop')
   stopBtn.textContent = t('abort')
   stopBtn.hidden = true
@@ -87,7 +97,17 @@ export function mountImportPanel(opts: {
     addTabsBtn.disabled = busy
   }
 
-  fab.addEventListener('click', () => { panel.hidden = !panel.hidden })
+  const setOpen = (open: boolean) => {
+    panel.hidden = !open
+    fab.setAttribute('aria-expanded', String(open))
+    if (open) textarea.focus()
+  }
+
+  fab.addEventListener('click', () => setOpen(panel.hidden))
+  // キーボード操作対応（Escape で閉じて FAB へフォーカスを戻す）
+  panel.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { setOpen(false); fab.focus() }
+  })
   textarea.addEventListener('input', render)
   runBtn.addEventListener('click', () => {
     if (busy) return

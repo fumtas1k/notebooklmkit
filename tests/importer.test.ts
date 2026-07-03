@@ -113,4 +113,15 @@ describe('importUrls', () => {
     expect(res.aborted).toBe(true)
     expect(res.succeeded).toEqual([URLS[0]]) // 処理中の1件は完了させる
   })
+
+  it('aborts promptly mid-item before the insert click', async () => {
+    const { deps } = makeWorld()
+    deps.getWebsiteChip = () => null // チップが出現しないまま待ち続ける
+    const ac = new AbortController()
+    setTimeout(() => ac.abort(), 50)
+    const res = await importUrls(['https://a.example/'], deps, { signal: ac.signal })
+    expect(res.aborted).toBe(true)
+    expect(res.succeeded).toEqual([])
+    expect(res.failed).toEqual([])
+  })
 })

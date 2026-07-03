@@ -124,4 +124,35 @@ describe('mountImportPanel', () => {
     expect(q('import-fab')).toBeNull()
     expect(q('import-panel')).toBeNull()
   })
+
+  it('exposes aria-expanded/aria-controls on the fab and role/aria-label on the panel', () => {
+    mount()
+    const fab = q<HTMLButtonElement>('import-fab')!
+    const panel = q('import-panel')!
+    expect(fab.getAttribute('aria-expanded')).toBe('false')
+    expect(fab.getAttribute('aria-controls')).toBe(panel.id)
+    fab.click()
+    expect(fab.getAttribute('aria-expanded')).toBe('true')
+    expect(panel.getAttribute('role')).toBe('dialog')
+    expect(panel.getAttribute('aria-label')).toBeTruthy()
+  })
+
+  it('closes on Escape and returns focus to the fab', () => {
+    mount()
+    const fab = q<HTMLButtonElement>('import-fab')!
+    const panel = q('import-panel')!
+    fab.click()
+    expect(panel.hidden).toBe(false)
+    const ta = q<HTMLTextAreaElement>('import-urls')!
+    ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(panel.hidden).toBe(true)
+    expect(document.activeElement).toBe(fab)
+  })
+
+  it('gives every button in the panel type="button"', () => {
+    mount()
+    for (const nlk of ['import-fab', 'import-load-tabs', 'import-add-tabs', 'import-run', 'import-stop']) {
+      expect(q<HTMLButtonElement>(nlk)!.type).toBe('button')
+    }
+  })
 })

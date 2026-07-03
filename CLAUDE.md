@@ -41,7 +41,7 @@ content script（`src/content/`）と、タブ列挙のみを行う最小の bac
 **Phase 2（インポート）は Phase 1 と同じ分離を踏襲。** `src/content/importer.ts`
 （`importUrls`）は `ImporterDeps` を受け取る DI 構成で、1 URL ずつ
 「ソース追加 → ウェブサイト → URL 入力 → 挿入 → ダイアログ消滅待ち」を逐次実行する。
-失敗で安全停止、中断は URL 境界のみ、という deleter と同じ規約。**ソース追加フローの
+失敗で安全停止という deleter と同じ規約。中断は挿入クリック前なら要素待ちレベルで即時に効き、挿入後はその1件の完了を待って URL 境界で停止する。**ソース追加フローの
 セレクタは実 DOM 未調査の暫定**（テキスト / aria-label マッチング主軸。`SOURCE_TEXT`）で、
 実機確認は `docs/e2e-checklist-phase2.md` §0 に従う。`main.ts` の `start()` は pathname で
 一覧ページ（Phase 1 UI）とノートブックページ（インポートパネル）を出し分ける常駐ルーター。

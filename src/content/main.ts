@@ -273,9 +273,17 @@ export function start(
 ): () => void {
   let current: PageKind = 'none'
   let dispose: (() => void) | null = null
+  let lastPath: string | null = null
 
   const apply = () => {
-    const kind = detectPage(root, getPath())
+    const path = getPath()
+    // 毎 mutation 呼ばれるため軽量化: マウント済み（current !== 'none'）で pathname が
+    // 変わっていなければ何もしない（querySelector も走らせない）。SPA 遷移は必ず
+    // pathname が変わるので取りこぼさない。副次効果として、一覧コンテナが再描画で
+    // 一瞬 detach しても pathname が同じ限り teardown しない（issue #38 のガード）。
+    if (path === lastPath && current !== 'none') return
+    lastPath = path
+    const kind = detectPage(root, path)
     if (kind === current) return
     // 'none' への遷移でも dispose する（SPA 遷移で UI を残さない）
     dispose?.()

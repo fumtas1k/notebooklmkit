@@ -28,6 +28,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  color-scheme: light;
 }
 .nlk-import-panel[hidden] { display: none; }
 .nlk-import-title { font-weight: 600; }
@@ -60,4 +61,14 @@
   border-radius: 4px;
   padding: 6px 12px;
   font-weight: 600;
+}
+
+/* NotebookLM ダークテーマ環境（OS/ブラウザのダーク設定）での視覚的な浮きを抑える */
+@media (prefers-color-scheme: dark) {
+  .nlk-import-panel {
+    background: #2d2e30;
+    color: #e8eaed;
+    border-color: #5f6368;
+    color-scheme: dark;
+  }
 }
