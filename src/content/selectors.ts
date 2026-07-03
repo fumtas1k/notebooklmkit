@@ -14,7 +14,7 @@ export const SELECTORS = {
   // クラス名 churn に強いよう、テキスト / aria-label マッチング（SOURCE_TEXT）を主軸にする。
   // 実機確認は docs/e2e-checklist-phase2.md。ズレたらこのファイルだけを直す。
   sourceDialog: 'mat-dialog-container',
-  sourceChipCandidates: 'mat-chip, .mdc-evolution-chip, [role="option"], button',
+  sourceChipCandidates: 'mat-chip, .mdc-evolution-chip, [role="option"], button.drop-zone-icon-button',
   sourceSubmit: 'button[type="submit"]',
 } as const
 

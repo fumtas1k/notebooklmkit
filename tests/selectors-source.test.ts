@@ -45,6 +45,23 @@ describe('source-flow selectors (provisional)', () => {
     expect(getWebsiteChip(dialog)?.textContent).toContain('Website')
   })
 
+  it('getWebsiteChip matches the real-DOM website drop-zone button', () => {
+    const dialog = document.createElement('div')
+    dialog.innerHTML = `
+      <button class="drop-zone-icon-button"><span>ファイルをアップロード</span></button>
+      <button class="drop-zone-icon-button"><span>ウェブサイト</span></button>`
+    expect(getWebsiteChip(dialog)?.classList.contains('drop-zone-icon-button')).toBe(true)
+    expect(getWebsiteChip(dialog)?.textContent).toContain('ウェブサイト')
+  })
+
+  it('getWebsiteChip ignores bare buttons even if they contain website text', () => {
+    const dialog = document.createElement('div')
+    // 種別チップでない裸 button（例: ヘルプリンク）は候補外。旧候補（裸 button）では
+    // 誤マッチしていたケースの回帰テスト。
+    dialog.innerHTML = `<button class="help-link">Learn more about website sources</button>`
+    expect(getWebsiteChip(dialog)).toBeNull()
+  })
+
   it('getSourceUrlInput prefers url/text inputs and falls back to textarea', () => {
     const dialog = document.createElement('div')
     dialog.innerHTML = `<input type="checkbox"><input type="url">`
