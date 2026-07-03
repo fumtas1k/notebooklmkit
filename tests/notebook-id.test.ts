@@ -5,8 +5,14 @@ describe('parseNotebookId', () => {
   it('extracts the id from a /notebook/<id> path', () => {
     expect(parseNotebookId('/notebook/abc-123')).toBe('abc-123')
   })
-  it('extracts the id when trailing segments/query exist', () => {
+  it('extracts the id when a trailing segment exists', () => {
     expect(parseNotebookId('/notebook/abc-123/foo')).toBe('abc-123')
+  })
+  it('extracts the id when a query string exists', () => {
+    expect(parseNotebookId('/notebook/abc-123?tab=x')).toBe('abc-123')
+  })
+  it('extracts the id when a fragment exists', () => {
+    expect(parseNotebookId('/notebook/abc-123#frag')).toBe('abc-123')
   })
   it('returns null for non-notebook paths', () => {
     expect(parseNotebookId('/')).toBeNull()
