@@ -293,7 +293,9 @@ export async function handlePendingCreate(
     console.error('notebooklmkit: unexpected error during pending create', err)
     ok = false
   }
-  env.sendMessage({ type: CREATE_RESULT_MESSAGE, ok })
+  // 元タブ X（クリック元）でバッジを更新できるよう、pendingCreate に載っていた
+  // tabId をそのまま background に返す（content はタブ Y 上で走るため sender.tab.id は使えない）。
+  env.sendMessage({ type: CREATE_RESULT_MESSAGE, ok, tabId: pending.tabId })
 }
 
 // 実 chrome / storage への既定配線。chrome が無い環境（jsdom）でも安全に no-op になる。
