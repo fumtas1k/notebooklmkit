@@ -1,21 +1,23 @@
 import { describe, it, expect, vi, type Mock } from 'vitest'
 import { handleClipClick, handleCreateResult, resetStuckClip, type ClipDeps } from '../src/background/main'
 
+type Badge = { text: string; tabId?: number }
+
 function makeDeps(): ClipDeps & {
   set: Mock<[Record<string, unknown>], Promise<void>>
   created: unknown[]
-  badges: string[]
+  badges: Badge[]
   removed: string[]
 } {
   const created: unknown[] = []
-  const badges: string[] = []
+  const badges: Badge[] = []
   const removed: string[] = []
   const set = vi.fn(async (_i: Record<string, unknown>) => {})
   return {
     created, badges, set, removed,
     storageSet: set,
     createTab: vi.fn(async (p) => { created.push(p); return {} }),
-    setBadge: (t: string) => { badges.push(t) },
+    setBadge: (text: string, tabId?: number) => { badges.push({ text, tabId }) },
     now: () => 1000,
     storageGet: vi.fn(async (_k: string) => ({})),
     storageRemove: vi.fn(async (k: string) => { removed.push(k) }),
@@ -23,60 +25,65 @@ function makeDeps(): ClipDeps & {
 }
 
 describe('handleClipClick', () => {
-  it('badges "!" and does nothing for a non-http url', async () => {
+  it('badges "!" on the source tab and does nothing for a non-http url', async () => {
     const d = makeDeps()
-    await handleClipClick('chrome://extensions/', d)
-    expect(d.badges).toContain('!')
+    await handleClipClick('chrome://extensions/', 7, d)
+    expect(d.badges).toContainEqual({ text: '!', tabId: 7 })
     expect(d.set).not.toHaveBeenCalled()
     expect(d.created).toEqual([])
   })
 
-  it('stores pendingCreate and opens NotebookLM home in the foreground', async () => {
+  it('stores pendingCreate with tabId and badges "…" on the source tab', async () => {
     const d = makeDeps()
-    await handleClipClick('https://x.example/', d)
-    expect(d.set).toHaveBeenCalledWith({ pendingCreate: { urls: ['https://x.example/'], ts: 1000 } })
+    await handleClipClick('https://x.example/', 7, d)
+    expect(d.set).toHaveBeenCalledWith({ pendingCreate: { urls: ['https://x.example/'], ts: 1000, tabId: 7 } })
     expect(d.created).toEqual([{ url: 'https://notebooklm.google.com/', active: true }])
-    expect(d.badges).toContain('…')
+    expect(d.badges).toContainEqual({ text: '…', tabId: 7 })
   })
 
-  it('falls back to "!" without throwing when storageSet rejects', async () => {
+  it('stores tabId undefined when the clicked tab has no id (global fallback)', async () => {
+    const d = makeDeps()
+    await handleClipClick('https://x.example/', undefined, d)
+    expect(d.set).toHaveBeenCalledWith({ pendingCreate: { urls: ['https://x.example/'], ts: 1000, tabId: undefined } })
+    expect(d.badges).toContainEqual({ text: '…', tabId: undefined })
+  })
+
+  it('falls back to "!" on the source tab without throwing when storageSet rejects', async () => {
     const d = makeDeps()
     d.storageSet = vi.fn(async () => { throw new Error('storage unavailable') })
-    await expect(handleClipClick('https://x.example/', d)).resolves.toBeUndefined()
-    expect(d.badges).toContain('!')
+    await expect(handleClipClick('https://x.example/', 7, d)).resolves.toBeUndefined()
+    expect(d.badges).toContainEqual({ text: '!', tabId: 7 })
   })
 
-  it('falls back to "!" without throwing when createTab rejects', async () => {
+  it('falls back to "!" and removes pendingCreate when createTab rejects', async () => {
     const d = makeDeps()
     d.createTab = vi.fn(async () => { throw new Error('no tab') })
-    await expect(handleClipClick('https://x.example/', d)).resolves.toBeUndefined()
-    expect(d.badges).toContain('!')
-    // M-1: createTab 失敗時は pendingCreate を残さない（後で手動で NotebookLM を
-    // 開いた際に意図しない自動作成が起きるのを防ぐ）
+    await expect(handleClipClick('https://x.example/', 7, d)).resolves.toBeUndefined()
+    expect(d.badges).toContainEqual({ text: '!', tabId: 7 })
     expect(d.removed).toEqual(['pendingCreate'])
   })
 })
 
 describe('resetStuckClip', () => {
-  it('badges "!" and removes pendingCreate when it is still present (content script never ran)', async () => {
-    const badges: string[] = []
+  it('badges "!" on the stored tabId and removes pendingCreate when it is still present', async () => {
+    const badges: Badge[] = []
     const removed: string[] = []
     await resetStuckClip({
-      storageGet: async (_k: string) => ({ pendingCreate: { urls: ['https://x.example/'], ts: 1000 } }),
+      storageGet: async (_k: string) => ({ pendingCreate: { urls: ['https://x.example/'], ts: 1000, tabId: 9 } }),
       storageRemove: async (k: string) => { removed.push(k) },
-      setBadge: (t: string) => { badges.push(t) },
+      setBadge: (text: string, tabId?: number) => { badges.push({ text, tabId }) },
     })
-    expect(badges).toEqual(['!'])
+    expect(badges).toEqual([{ text: '!', tabId: 9 }])
     expect(removed).toEqual(['pendingCreate'])
   })
 
   it('does nothing when pendingCreate is already gone (normal flow completed)', async () => {
-    const badges: string[] = []
+    const badges: Badge[] = []
     const removed: string[] = []
     await resetStuckClip({
       storageGet: async (_k: string) => ({}),
       storageRemove: async (k: string) => { removed.push(k) },
-      setBadge: (t: string) => { badges.push(t) },
+      setBadge: (text: string, tabId?: number) => { badges.push({ text, tabId }) },
     })
     expect(badges).toEqual([])
     expect(removed).toEqual([])
@@ -84,10 +91,11 @@ describe('resetStuckClip', () => {
 })
 
 describe('handleCreateResult', () => {
-  it('badges check on success and bang on failure', () => {
-    const ok: string[] = []
-    handleCreateResult(true, { setBadge: (t) => ok.push(t) })
-    handleCreateResult(false, { setBadge: (t) => ok.push(t) })
-    expect(ok).toEqual(['✓', '!'])
+  it('badges check/bang on the given tabId', () => {
+    const badges: Badge[] = []
+    const setBadge = (text: string, tabId?: number) => { badges.push({ text, tabId }) }
+    handleCreateResult(true, 3, { setBadge })
+    handleCreateResult(false, 3, { setBadge })
+    expect(badges).toEqual([{ text: '✓', tabId: 3 }, { text: '!', tabId: 3 }])
   })
 })

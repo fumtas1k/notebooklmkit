@@ -54,35 +54,40 @@ export interface ClipDeps {
   storageGet(key: string): Promise<Record<string, unknown>>
   storageRemove(key: string): Promise<void>
   createTab(props: { url: string; active: boolean }): Promise<unknown>
-  setBadge(text: string): void
+  setBadge(text: string, tabId?: number): void
   now(): number
 }
 
 // ツールバーアイコンのクリック本体。現ページ URL を pendingCreate に置き、
 // NotebookLM ホームをフォアグラウンドで開く（content script が新規作成を実行）。
-export async function handleClipClick(clickedUrl: string | undefined, d: ClipDeps): Promise<void> {
+// tabId はクリック元タブ。バッジはすべてこのタブにスコープする（元タブ X に統一）。
+export async function handleClipClick(
+  clickedUrl: string | undefined,
+  tabId: number | undefined,
+  d: ClipDeps,
+): Promise<void> {
   if (!clickedUrl || !isHttpUrl(clickedUrl)) {
-    d.setBadge('!')
+    d.setBadge('!', tabId)
     return
   }
   // storage/tabs は reject し得る。失敗しても badge '!' に帰着させ '…' 固着を防ぐ。
   try {
-    const pending: PendingCreate = { urls: [clickedUrl], ts: d.now() }
+    const pending: PendingCreate = { urls: [clickedUrl], ts: d.now(), tabId }
     await d.storageSet({ pendingCreate: pending })
-    d.setBadge('…')
+    d.setBadge('…', tabId)
     await d.createTab({ url: NOTEBOOK_HOME, active: true })
   } catch {
     // M-1: storageSet 後に createTab が失敗すると pendingCreate が残留し、後で
     // 手動で NotebookLM を開いた際に意図しない自動作成を招く。二重障害でも
     // ここは投げずに badge '!' へ帰着させる。
     await d.storageRemove('pendingCreate').catch(() => {})
-    d.setBadge('!')
+    d.setBadge('!', tabId)
   }
 }
 
-// content からの作成結果でバッジを更新する。
-export function handleCreateResult(ok: boolean, d: Pick<ClipDeps, 'setBadge'>): void {
-  d.setBadge(ok ? '✓' : '!')
+// content からの作成結果でバッジを更新する（元タブにスコープ）。
+export function handleCreateResult(ok: boolean, tabId: number | undefined, d: Pick<ClipDeps, 'setBadge'>): void {
+  d.setBadge(ok ? '✓' : '!', tabId)
 }
 
 // I-1: content script が nlk:create-result を返せない経路（未ログインで
@@ -95,8 +100,9 @@ export async function resetStuckClip(
   d: Pick<ClipDeps, 'storageGet' | 'storageRemove' | 'setBadge'>,
 ): Promise<void> {
   const got = await d.storageGet('pendingCreate')
-  if (got.pendingCreate === undefined) return
-  d.setBadge('!')
+  const pending = got.pendingCreate as PendingCreate | undefined
+  if (pending === undefined) return
+  d.setBadge('!', pending.tabId)
   await d.storageRemove('pendingCreate')
 }
 
