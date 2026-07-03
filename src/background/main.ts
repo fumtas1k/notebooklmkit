@@ -112,7 +112,7 @@ if (typeof chrome !== 'undefined' && chrome.action?.onClicked) {
   const clearLater = (t: string, tabId?: number) => {
     if (t === '✓' || t === '!') {
       setTimeout(() => {
-        void chrome.action.setBadgeText(tabId !== undefined ? { text: '', tabId } : { text: '' })
+        chrome.action.setBadgeText(tabId !== undefined ? { text: '', tabId } : { text: '' }).catch(() => {})
       }, 4000)
     }
   }
@@ -122,7 +122,7 @@ if (typeof chrome !== 'undefined' && chrome.action?.onClicked) {
     storageRemove: (k) => chrome.storage.local.remove(k),
     createTab: (p) => chrome.tabs.create(p),
     setBadge: (text, tabId) => {
-      void chrome.action.setBadgeText(tabId !== undefined ? { text, tabId } : { text })
+      chrome.action.setBadgeText(tabId !== undefined ? { text, tabId } : { text }).catch(() => {})
       clearLater(text, tabId)
     },
     now: () => Date.now(),
