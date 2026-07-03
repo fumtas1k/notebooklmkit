@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Google NotebookLM のコンシューマ版（`https://notebooklm.google.com/`）に機能を追加する Manifest V3 の Chrome 拡張機能。NotebookLM には**公開 API が存在しない**ため、すべて **content script からの DOM 自動化**（NotebookLM 自身の UI フローを疑似クリックで操作）で実現している。RPC / `batchexecute` 直接呼び出しは明確にスコープ外（`docs/requirements.md` §3 参照）。
 
-Phase 1（実装済み）: ノートブック一覧の複数選択＋一括削除。Phase 2（計画中）: タブ / URL の一括インポート。全体のフェーズ計画は `docs/requirements.md` を参照。
+Phase 1（実装済み）: ノートブック一覧の複数選択＋一括削除。Phase 2（実装済み: F2-1 / F2-3。F2-2 は未実装）: タブ / URL の一括インポート。全体のフェーズ計画は `docs/requirements.md` を参照。
 
 ドキュメント・コードは日英バイリンガル。要件 / 設計ドキュメントとコードコメントは日本語。
 
@@ -26,7 +26,7 @@ npx vitest run -t "aborts"             # 名前指定で単一テスト
 
 ## アーキテクチャ
 
-すべて `src/content/` 配下にある（単一の content script。popup / background はまだ無い）。壊れやすい部分とテスト可能なロジックを意図的に分離する設計。
+content script（`src/content/`）と、タブ列挙のみを行う最小の background service worker（`src/background/main.ts`）で構成される（popup はまだ無い）。壊れやすい部分とテスト可能なロジックを意図的に分離する設計。
 
 **セレクタは一箇所に集約。** NotebookLM の DOM セレクタはすべて `src/content/selectors.ts`（`SELECTORS` 定数）にある。NotebookLM の UI が変わったら、まずこのファイルを直す。セレクタは `docs/requirements.md` §8.5 に記録された実 DOM 調査に基づく。安定しているのは `mdc-*` / `mat-*`（Angular Material）。`ng-tns-*` / `_ngcontent-*`（動的生成）には**絶対に依存しない**。
 
@@ -37,6 +37,16 @@ npx vitest run -t "aborts"             # 名前指定で単一テスト
 - 各削除は NotebookLM 標準フローに従う: 3点メニューボタン →「削除」メニュー項目 → 確認ダイアログの Delete ボタン。各ステップは `waitFor` の要素出現ポーリングで待つ。ダイアログ容器ではなく **Delete ボタン自体**の出現を待つ（ボタンは少し遅れて現れる）。
 - 完了判定は、掴んだ行ノードが DOM から外れること（`row.isConnected`）で行う。タイトルで再検索すると同名の別行を拾い続けるため使わない。
 - 失敗 / タイムアウト時は**停止**（安全側）し、失敗を記録する。中断はアイテム境界でのみ判定 —— 処理中の1件は必ず完了させる。
+
+**Phase 2（インポート）は Phase 1 と同じ分離を踏襲。** `src/content/importer.ts`
+（`importUrls`）は `ImporterDeps` を受け取る DI 構成で、1 URL ずつ
+「ソース追加 → ウェブサイト → URL 入力 → 挿入 → ダイアログ消滅待ち」を逐次実行する。
+失敗で安全停止という deleter と同じ規約。中断は挿入クリック前なら要素待ちレベルで即時に効き、挿入後はその1件の完了を待って URL 境界で停止する。**ソース追加フローの
+セレクタは実 DOM 未調査の暫定**（テキスト / aria-label マッチング主軸。`SOURCE_TEXT`）で、
+実機確認は `docs/e2e-checklist-phase2.md` §0 に従う。`main.ts` の `start()` は pathname で
+一覧ページ（Phase 1 UI）とノートブックページ（インポートパネル）を出し分ける常駐ルーター。
+タブ一括インポート（F2-1）は content → background の `nlk:list-tabs` メッセージで
+同一ウィンドウのタブ URL を取得する（`permissions: ['tabs']` はこのためだけに使用）。
 
 **配線は `main.ts`。** `start()` は `.all-projects-container` の出現を待つ（NotebookLM はクライアントレンダリングの Angular SPA で、script 評価時点ではコンテナが無いことが多い）。その後 `init()` が SelectionStore を用意し、行チェックボックスを注入し、アクションバーをマウントし、再描画時にチェックボックスを再注入する `MutationObserver` を設定する。**削除実行中は observer を切断する**（拡張自身が一覧を大量に書き換えるため）。`finally` で再接続する。`main.ts` 末尾では `location.hostname === 'notebooklm.google.com'` のときだけ自動起動するので、テスト（jsdom）でモジュールを import しても副作用は無い。
 

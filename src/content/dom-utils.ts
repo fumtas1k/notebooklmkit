@@ -70,3 +70,10 @@ export function delay(ms: number, signal?: AbortSignal): Promise<void> {
     signal?.addEventListener('abort', onAbort, { once: true })
   })
 }
+
+// Angular のフォームバインディングは value 代入だけでは反応しないため、
+// 代入後に bubbles する input イベントを発火して変更を通知する。
+export function setInputValue(el: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+  el.value = value
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+}

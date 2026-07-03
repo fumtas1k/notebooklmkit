@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { waitFor, safeClick, delay, TimeoutError, AbortError } from '../src/content/dom-utils'
+import { waitFor, safeClick, delay, setInputValue, TimeoutError, AbortError } from '../src/content/dom-utils'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -42,5 +42,18 @@ describe('delay', () => {
     const ac = new AbortController()
     ac.abort()
     await expect(delay(10, ac.signal)).rejects.toBeInstanceOf(AbortError)
+  })
+})
+
+describe('setInputValue', () => {
+  it('sets the value and dispatches a bubbling input event', () => {
+    const input = document.createElement('input')
+    const parent = document.createElement('div')
+    parent.appendChild(input)
+    const seen: string[] = []
+    parent.addEventListener('input', (e) => seen.push((e.target as HTMLInputElement).value))
+    setInputValue(input, 'https://a.example')
+    expect(input.value).toBe('https://a.example')
+    expect(seen).toEqual(['https://a.example'])
   })
 })

@@ -1,15 +1,20 @@
 import {
   getNotebookRows, getRowIdentity, findRowByIdentity, getRowKey,
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
+  getAddSourceButton, getSourceDialog, getWebsiteChip,
+  getSourceUrlInput, getSourceSubmitButton,
 } from './selectors'
 import { makeTarget, type NotebookTarget } from '../types'
 import { SelectionStore } from './selection'
 import { detectLang, createT } from './i18n'
 import { injectRowCheckboxes, CHECKBOX_ATTR } from './ui/row-checkbox'
 import { mountActionBar } from './ui/action-bar'
+import { mountImportPanel } from './ui/import-panel'
 import { confirmDeletion } from './confirm-dialog'
 import { deleteNotebooks, type DeleterDeps } from './deleter'
-import { waitFor, safeClick } from './dom-utils'
+import { importUrls, type ImporterDeps } from './importer'
+import { listOpenTabs } from './tabs-bridge'
+import { waitFor, safeClick, setInputValue } from './dom-utils'
 
 export const VERSION = '0.1.0'
 
@@ -170,6 +175,73 @@ export function init(root: ParentNode = document): () => void {
   }
 }
 
+// ノートブックページ（/notebook/<id>）側の配線。インポートパネルを載せる。
+// ノートブックページの DOM 構造には依存しない（パネルは body 固定配置、
+// ソース追加フローの要素は importer が waitFor で都度探す）。
+export function initImport(root: ParentNode = document): () => void {
+  const t = createT(detectLang())
+  let currentAbort: AbortController | null = null
+  let importing = false
+
+  const panel = mountImportPanel({
+    t,
+    handlers: {
+      onLoadTabs: () => listOpenTabs(),
+      onStop: () => { currentAbort?.abort() },
+      onImport: (urls) => { void runImport(urls) },
+    },
+  })
+
+  async function runImport(urls: string[]): Promise<void> {
+    if (importing || urls.length === 0) return
+    importing = true
+    const ac = new AbortController()
+    currentAbort = ac
+    panel.setBusy(true)
+    try {
+      const deps: ImporterDeps = {
+        getAddSourceButton: () => getAddSourceButton(root),
+        getSourceDialog: () => getSourceDialog(),
+        getWebsiteChip,
+        getUrlInput: getSourceUrlInput,
+        getSubmitButton: getSourceSubmitButton,
+        setInputValue,
+        click: (el) => { safeClick(el) },
+        waitFor,
+      }
+      const result = await importUrls(urls, deps, {
+        signal: ac.signal,
+        onProgress: (p) => panel.setProgress(t('importProgress', { done: p.completed, total: p.total })),
+      })
+      const rest = urls.length - result.succeeded.length - result.failed.length
+      if (result.aborted) {
+        panel.setProgress(t('importAborted', { ok: result.succeeded.length, rest }))
+      } else if (result.failed.length > 0) {
+        panel.setProgress(
+          t('importFailedSummary', { ok: result.succeeded.length, ng: result.failed.length, rest }),
+        )
+      } else {
+        panel.setProgress(t('importDone', { ok: result.succeeded.length, ng: 0 }))
+      }
+      // 成功した URL は textarea から取り除く（失敗・未処理分が残りリトライしやすい）
+      panel.removeUrls(result.succeeded)
+    } catch (err) {
+      console.error('notebooklmkit: unexpected error during import', err)
+      panel.setProgress(t('domError'))
+    } finally {
+      panel.setBusy(false)
+      currentAbort = null
+      importing = false
+    }
+  }
+
+  return () => {
+    // SPA 遷移等で teardown されたら進行中のインポートも止める（issue #16 と同じ規約）
+    currentAbort?.abort()
+    panel.destroy()
+  }
+}
+
 function syncCheckboxes(store: SelectionStore, root: ParentNode): void {
   for (const row of getNotebookRows(root)) {
     const key = getRowKey(row)
@@ -178,32 +250,60 @@ function syncCheckboxes(store: SelectionStore, root: ParentNode): void {
   }
 }
 
-// NotebookLM はクライアントレンダリングの Angular SPA のため、モジュール評価時点
-// では `.all-projects-container` がまだ DOM に無いことが多い（cold load / SPA 遷移）。
-// 既に存在すれば即 init、無ければ出現を待って一度だけ init する。
-export function start(root: ParentNode = document): () => void {
-  const CONTAINER_SELECTOR = '.all-projects-container'
+type PageKind = 'list' | 'notebook' | 'none'
 
-  if (root.querySelector(CONTAINER_SELECTOR)) {
-    return init(root)
+export function isNotebookPath(pathname: string): boolean {
+  return pathname.startsWith('/notebook/')
+}
+
+function detectPage(root: ParentNode, pathname: string): PageKind {
+  if (isNotebookPath(pathname)) return 'notebook'
+  if (root.querySelector('.all-projects-container')) return 'list'
+  return 'none'
+}
+
+// NotebookLM は pushState 遷移でイベントが取れない Angular SPA のため、
+// DOM 変化のたびにページ種別を判定して UI を掛け替える常駐ルーター。
+// 判定は pathname の前方一致と querySelector 1回だけで軽量。
+// 一覧コンテナが未描画の cold load は 'none' 扱いになり、描画後の mutation で
+// 'list' に遷移する（旧 bootstrap observer と同じ振る舞い）。
+export function start(
+  root: ParentNode = document,
+  getPath: () => string = () => location.pathname,
+): () => void {
+  let current: PageKind = 'none'
+  let dispose: (() => void) | null = null
+  let lastPath: string | null = null
+
+  const apply = () => {
+    const path = getPath()
+    // 毎 mutation 呼ばれるため軽量化: マウント済み（current !== 'none'）で pathname が
+    // 変わっていなければ何もしない（querySelector も走らせない）。SPA 遷移は必ず
+    // pathname が変わるので取りこぼさない。副次効果として、一覧コンテナが再描画で
+    // 一瞬 detach しても pathname が同じ限り teardown しない（issue #38 のガード）。
+    if (path === lastPath && current !== 'none') return
+    lastPath = path
+    const kind = detectPage(root, path)
+    if (kind === current) return
+    // 'none' への遷移でも dispose する（SPA 遷移で UI を残さない）
+    dispose?.()
+    dispose = null
+    current = kind
+    if (kind === 'list') dispose = init(root)
+    else if (kind === 'notebook') dispose = initImport(root)
   }
 
-  let disposeInit: (() => void) | null = null
+  apply()
   const target: Element =
-    (root instanceof Document ? (root.documentElement ?? root.body) : (root as Element)) ?? document.documentElement
-
-  const bootstrapObserver = new MutationObserver(() => {
-    if (disposeInit) return // 既に init 済みなら再度呼ばない
-    if (root.querySelector(CONTAINER_SELECTOR)) {
-      bootstrapObserver.disconnect()
-      disposeInit = init(root)
-    }
-  })
-  bootstrapObserver.observe(target, { childList: true, subtree: true })
+    (root instanceof Document ? (root.documentElement ?? root.body) : (root as Element)) ??
+    document.documentElement
+  const router = new MutationObserver(apply)
+  router.observe(target, { childList: true, subtree: true })
 
   return () => {
-    bootstrapObserver.disconnect()
-    disposeInit?.()
+    router.disconnect()
+    dispose?.()
+    dispose = null
   }
 }
 
