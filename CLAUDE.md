@@ -66,6 +66,12 @@ content script（`src/content/`）と、タブ列挙のみを行う最小の bac
 - **レビュー指摘のうち当該 PR で対応しないものは issue 化する。** コードレビューで挙がった指摘で、その PR のスコープでは修正しないが対応した方が良いものは、放置せず GitHub issue として起票する。
 - **issue には優先度とカテゴリのラベルを付ける。** 優先度（例: `priority: high` / `priority: medium` / `priority: low`）と、カテゴリ（例: `refactor` / `security` / `chore` / `bug` / `enhancement` / `documentation` など）を必ず付与する。該当するラベルがリポジトリに無ければ作成してから付ける。
 
+## PR / マージ
+
+- **PR は squash マージ**。件名は `<日本語の説明> (#PR番号)`（例: `#36: 現在ページから新規ノートブックを作成 (#46)`）、本文末尾に `Closes #issue番号`。`gh pr merge <n> --squash --delete-branch` を使う。
+- **spec / plan ドキュメントも feature ブランチ側でコミットする。** main に直コミットすると squash マージ後にローカル main が origin/main と分岐する（復旧は `git reset --hard origin/main`。squash 済みなら内容は保全される）。
+- **マージ後は post-merge-retro ルーチンを回す**（振り返り→CLAUDE.md/scripts/skills 改善提案→承認で PR）。セッション内 `gh pr merge` ならフックが自動リマインドする（GitHub UI マージは対象外なので手動実行）。
+
 ## 計画ドキュメント
 
 `docs/superpowers/specs/` と `docs/superpowers/plans/` に設計仕様と実装計画がある（本リポジトリは Superpowers のブレスト→仕様→計画のワークフローを使う）。フェーズを実装する前に、意図された設計をここで確認すること。
