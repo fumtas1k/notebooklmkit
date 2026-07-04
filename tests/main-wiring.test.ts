@@ -297,6 +297,40 @@ describe('runDelete error recovery', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
+  // issue #23 レビュー指摘1: buildTargets / onSelectAll が削除可能行のみを対象に
+  // するようになったので、runDelete の isSelectAll 判定（件数タイプ確認の発火条件）
+  // も削除可能行だけを分母にしなければならない。削除不可行（Reader）を分母に残すと、
+  // 混在リストで削除可能行を全選択しても targets.length < totalRows となって
+  // isSelectAll が false に希薄化し、以前は発火していた strong confirm が漏れる。
+  it('fires the strong confirm when all deletable rows are selected in a mixed list', () => {
+    // 削除可能2行（A / B）＋ Reader 1行。削除可能行は STRONG_CONFIRM_THRESHOLD 未満なので、
+    // strong confirm はもっぱら isSelectAll 経由でしか発火しない。
+    const root = document.createElement('div')
+    root.innerHTML = `
+    <div class="all-projects-container"><project-table><table class="project-table"><tbody>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">Recommended</span></td></tr>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">A</span></td>
+        <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">B</span></td>
+        <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+    </tbody></table></project-table></div>`
+    const dispose = init(root)
+
+    // アクションバーは document.body に mount される（dedup 無し）。他テストが残した
+    // バーと取り違えないよう、最後に mount した自分のバーの操作要素だけを叩く。
+    const bars = document.querySelectorAll('[data-nlk="action-bar"]')
+    const bar = bars[bars.length - 1]
+    bar.querySelector<HTMLButtonElement>('[data-nlk="bar-select-all"]')!.click()
+    bar.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.click()
+
+    // 削除可能行 2 件を全選択 → isSelectAll=true → 件数タイプ確認（confirm-input あり）。
+    expect(document.querySelector('[data-nlk="confirm-input"]')).not.toBeNull()
+
+    // 後片付け: ダイアログを閉じ、overlay / document キャプチャリスナーを残さない。
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
+    dispose()
+  })
+
   // issue #16: 削除処理が pending の間に init() の disposer が呼ばれると、
   // deleteNotebooks の settle 時に内側 finally が破棄済み observer を復活させて
   // しまう（現状 production では disposer 未保持のため到達不能だが、将来の SPA

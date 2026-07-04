@@ -103,7 +103,10 @@ export function init(root: ParentNode = document): () => void {
     try {
       const targets = buildTargets(store, root)
       if (targets.length === 0) return
-      const totalRows = getNotebookRows(root).length
+      // 分母は削除可能行のみ（buildTargets / onSelectAll と揃える）。削除不可行
+      // （Reader）を数えると、混在リストで削除可能行を全選択しても isSelectAll が
+      // false に希薄化し、件数タイプ確認（strong confirm）が漏れる（issue #23 レビュー指摘1）。
+      const totalRows = getNotebookRows(root).filter(isDeletableRow).length
       const isSelectAll = targets.length === totalRows
       const ok = await confirmDeletion({ count: targets.length, isSelectAll, t })
       // confirm 待機中に teardown された場合は、たとえ確定されても進めない。
