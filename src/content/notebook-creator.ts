@@ -98,6 +98,8 @@ export async function triggerAudioOverview(
       // 既に生成中（前回クリックが効いた）なら二重クリックしない
       if (deps.isGenerating()) return true
       const btn = await deps.waitFor(enabledTile, { timeout: TILE_WAIT_MS, signal })
+      // W1封じ（#60）: プリチェックから enabled タイル待ちの間に生成が始まっていたら押さない。
+      if (deps.isGenerating()) return true
       deps.click(btn)
       // クリック後、生成開始を clickInterval だけ待つ。開始すれば成功、しなければ（早すぎクリック）再試行。
       try {
