@@ -63,17 +63,43 @@ if [ "$matched" -ne 1 ]; then
     exit 0
 fi
 
-# 成功判定。booleanフィールドは `//` だと false 自体がフォールバックを
-# 誘発してしまう（jq では false/null のみ falsy）ため、明示的な比較で真偽値化する。
+# 成功判定。
+#
+# 前提（このリポジトリの実測）: PostToolUse は Bash が非ゼロ終了した場合そもそも
+# 発火しない。よってフックに到達した時点で概ね成功と見なせる。以下のシグナルは
+# defense-in-depth の任意チェックで、明示的に「失敗」と分かる場合のみ無出力にし、
+# 判定不能・シグナル不在なら成功とみなして出力する。
+#
+# 重要: stderr の内容は成功/失敗の判定に使わない。`gh` CLI は成功時も人間向けの
+# メッセージ（例 `✓ Squashed and merged pull request #49 ...`）を stderr に書くため、
+# 「stderr が非空なら失敗」とみなすと正常な成功マージのたびにリマインドを抑制して
+# しまう（この機能が事実上まったく発火しなくなる）。
+
+# (1) ユーザー中断でないこと。boolean は `//` だと false 自体がフォールバックを
+# 誘発する（jq では false/null のみ falsy）ため、明示的な比較で真偽値化する。
 interrupted="$(printf '%s' "$input" | jq -r '((.tool_response.interrupted == true) or (.toolResponse.interrupted == true))' 2>/dev/null)"
 if [ "$interrupted" != "false" ]; then
     # true、または判定不能（jq エラー等で空文字）なら安全側で無出力にする。
     exit 0
 fi
 
-stderr_out="$(printf '%s' "$input" | jq -r '(.tool_response.stderr // .toolResponse.stderr // .tool_response.error // .toolResponse.error // "")' 2>/dev/null)"
-if [ -n "$stderr_out" ]; then
-    # stderr に何か出ていれば失敗/警告の可能性があるため、成功と断定せず無出力にする。
+# (2) 明示的な成功/失敗シグナルが「存在する場合のみ」見る。環境により名称が
+# 異なり得るため複数候補を防御的に確認する。フィールドが存在しなければ
+# （null なら）成功とみなす —— 存在しないフィールドを「失敗」に倒さない。
+#
+# 注意: 複数候補の集約に `//` は使えない。jq では `false // X` が X に化ける
+# （false は falsy 扱い）ため、`success:false` のような明示失敗を取りこぼす。
+# 各候補を配列にまとめ any(...) で「いずれかが失敗値か」を判定する。
+failed="$(printf '%s' "$input" | jq -r '
+    ([.tool_response.exit_code, .toolResponse.exitCode, .tool_response.exitCode, .toolResponse.exit_code]
+        | any(. != null and . != 0))
+    or ([.tool_response.success, .toolResponse.success]
+        | any(. == false))
+    or ([.tool_response.is_error, .toolResponse.isError, .tool_response.isError, .toolResponse.is_error]
+        | any(. == true))
+' 2>/dev/null)"
+if [ "$failed" != "false" ]; then
+    # 明確に失敗、または判定不能（jq エラー等で空文字）なら無出力にする。
     exit 0
 fi
 
