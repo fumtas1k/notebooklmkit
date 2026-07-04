@@ -70,21 +70,26 @@ describe('createNotebookWithUrls', () => {
 })
 
 function makeAudioDeps(over: Partial<AudioOverviewDeps> = {}): AudioOverviewDeps & { clicks: HTMLElement[] } {
-  const btn = { disabled: false } as unknown as HTMLElement
+  const btn = document.createElement('div')
+  btn.setAttribute('role', 'button')
+  btn.setAttribute('aria-label', '音声解説')
   const clicks: HTMLElement[] = []
   return {
     clicks,
     getAudioOverviewButton: () => btn,
     click: (el) => { clicks.push(el) },
+    isGenerating: () => false,
     waitFor: fakeWaitFor,
     ...over,
   }
 }
 
 describe('triggerAudioOverview', () => {
-  it('clicks the audio-overview button when present and enabled', async () => {
+  it('clicks and succeeds once generation starts', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const d = makeAudioDeps()
+    // 1回目クリック後に生成中を検知（pre-check は false、post-click で true）
+    let calls = 0
+    const d = makeAudioDeps({ isGenerating: () => { calls++; return calls >= 2 } })
     const ok = await triggerAudioOverview(d)
     expect(ok).toBe(true)
     expect(d.clicks).toHaveLength(1)
@@ -92,7 +97,24 @@ describe('triggerAudioOverview', () => {
     warn.mockRestore()
   })
 
-  it('returns false and warns when the button never appears', async () => {
+  it('does not click when generation is already in progress', async () => {
+    const d = makeAudioDeps({ isGenerating: () => true })
+    const ok = await triggerAudioOverview(d)
+    expect(ok).toBe(true)
+    expect(d.clicks).toEqual([])
+  })
+
+  it('retries and gives up (warns) when generation never starts', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const d = makeAudioDeps({ isGenerating: () => false })
+    const ok = await triggerAudioOverview(d)
+    expect(ok).toBe(false)
+    expect(d.clicks.length).toBeGreaterThanOrEqual(2)  // MAX_ATTEMPTS 回リトライして諦める
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('returns false and warns when the tile never appears', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const d = makeAudioDeps({ getAudioOverviewButton: () => null })
     const ok = await triggerAudioOverview(d)
@@ -102,14 +124,17 @@ describe('triggerAudioOverview', () => {
     warn.mockRestore()
   })
 
-  it('returns false and warns while the button stays disabled (waits for enabled)', async () => {
+  it('does not click while the tile stays aria-disabled', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const disabled = { disabled: true } as unknown as HTMLElement
+    const disabled = document.createElement('div')
+    disabled.setAttribute('role', 'button')
+    disabled.setAttribute('aria-label', '音声解説')
+    disabled.setAttribute('aria-disabled', 'true')
     const d = makeAudioDeps({ getAudioOverviewButton: () => disabled })
     const ok = await triggerAudioOverview(d)
     expect(ok).toBe(false)
     expect(d.clicks).toEqual([])
-    expect(warn).toHaveBeenCalledOnce()
+    expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
 })

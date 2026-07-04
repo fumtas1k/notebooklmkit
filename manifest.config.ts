@@ -9,8 +9,10 @@ export default defineManifest({
   // tabs は F2-1（開いているタブの一括インポート）でタブの URL / title を読むためだけに使用。
   // storage は F2-2（現ページから新規ノートブック作成）で pendingCreate を保持するためだけに使用。
   // alarms は F2-2 の '…' 固着ウォッチドッグ（MV3 SW のアイドル終了に耐える）に使用。
-  // 取得したデータは端末内で完結し、外部送信はしない（docs/requirements.md §3.3）。
-  permissions: ['tabs', 'storage', 'alarms'],
+  // scripting は F2-2 の音声解説自動押下で、生成タイル（Angular Material の div[role=button]）を
+  // ページの主ワールドで実クリックするためだけに使用（隔離ワールドの合成イベントは効かない。§8.7）。
+  // 対象は host_permissions（notebooklm.google.com）に限定。取得したデータは端末内で完結し外部送信しない（§3.3）。
+  permissions: ['tabs', 'storage', 'alarms', 'scripting'],
   // ツールバーアイコンからの新規ノートブック作成（F2-2）。default_popup を置かず onClicked を使う。
   action: {},
   background: {

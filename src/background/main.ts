@@ -1,6 +1,29 @@
 import {
-  LIST_TABS_MESSAGE, CREATE_RESULT_MESSAGE, type TabInfo, type PendingCreate,
+  LIST_TABS_MESSAGE, CREATE_RESULT_MESSAGE, MAIN_WORLD_CLICK_MESSAGE, CLICK_TARGET_ATTR,
+  type TabInfo, type PendingCreate,
 } from '../types'
+
+// chrome.scripting.executeScript({ world: 'MAIN' }) で対象タブの主ワールドに注入して実行される
+// 自己完結クリック関数。executeScript は関数ソースをシリアライズして注入するため、外部変数 / import を
+// 参照できない（引数のみ渡せる）。マーカー属性 attr で対象要素を特定し、実ポインタ列を発火する。
+// 隔離ワールド（通常の content script）の合成イベントは Angular Material の生成タイル（div[role=button]）に
+// 効かず、CSP は chrome-extension: の script-src を許可しないため、CSP 免除の executeScript を使う（§8.7）。
+// SW 上では呼ばれず（DOM 無し）、注入先の主ワールドでのみ実行される。
+export function clickMarkedTargetInMainWorld(attr: string): void {
+  const el = document.querySelector<HTMLElement>(`[${attr}]`)
+  if (!el) return
+  el.removeAttribute(attr)
+  const r = el.getBoundingClientRect()
+  const base = {
+    bubbles: true, cancelable: true, composed: true, view: window, button: 0,
+    clientX: Math.round(r.left + r.width / 2), clientY: Math.round(r.top + r.height / 2),
+  }
+  el.dispatchEvent(new PointerEvent('pointerdown', { ...base, pointerId: 1, isPrimary: true }))
+  el.dispatchEvent(new MouseEvent('mousedown', base))
+  el.dispatchEvent(new PointerEvent('pointerup', { ...base, pointerId: 1, isPrimary: true }))
+  el.dispatchEvent(new MouseEvent('mouseup', base))
+  el.dispatchEvent(new MouseEvent('click', base))
+}
 
 // chrome.tabs.query の結果からインポート候補になるタブだけを残す純関数。
 // http/https 以外（chrome:// 等）はソースにできず、NotebookLM 自身のタブも対象外。
@@ -138,9 +161,18 @@ if (typeof chrome !== 'undefined' && chrome.action?.onClicked) {
   chrome.alarms.onAlarm.addListener((alarm: { name?: string }) => {
     if (alarm.name === STUCK_ALARM) void resetStuckClip(deps)
   })
-  chrome.runtime.onMessage.addListener((msg: unknown, sender: { id?: string }) => {
+  chrome.runtime.onMessage.addListener((msg: unknown, sender: { id?: string; tab?: { id?: number } }) => {
     if (sender.id !== chrome.runtime.id) return
     const m = msg as { type?: string; ok?: boolean; tabId?: number } | null
     if (m?.type === CREATE_RESULT_MESSAGE) handleCreateResult(!!m.ok, m.tabId, deps)
+    // F2-2: 音声解説タイルを送信元タブの主ワールドで実クリックする（§8.7）。
+    if (m?.type === MAIN_WORLD_CLICK_MESSAGE && sender.tab?.id !== undefined) {
+      chrome.scripting.executeScript({
+        target: { tabId: sender.tab.id },
+        world: 'MAIN',
+        func: clickMarkedTargetInMainWorld,
+        args: [CLICK_TARGET_ATTR],
+      }).catch(() => {})
+    }
   })
 }
