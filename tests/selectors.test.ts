@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   getNotebookRows, getRowIdentity, findRowByIdentity,
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
+  getListObserveTarget,
 } from '../src/content/selectors'
 
 const LIST_HTML = `
@@ -67,5 +68,18 @@ describe('selectors', () => {
     const dialog = getConfirmDialog()!
     expect(dialog).not.toBeNull()
     expect(getConfirmDeleteButton(dialog)?.textContent).toBe('Delete')
+  })
+})
+
+describe('getListObserveTarget', () => {
+  it('returns the welcome-page element when present', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<welcome-page><div class="all-projects-container"></div></welcome-page>'
+    expect(getListObserveTarget(root)?.tagName.toLowerCase()).toBe('welcome-page')
+  })
+  it('returns null when there is no welcome-page', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<div class="all-projects-container"></div>'
+    expect(getListObserveTarget(root)).toBeNull()
   })
 })

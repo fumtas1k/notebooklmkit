@@ -3,7 +3,7 @@ import {
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton, getCreateNewButton, getAudioOverviewButton,
-  getAudioGenerationCard, SOURCE_TEXT, isDeletableRow,
+  getAudioGenerationCard, SOURCE_TEXT, isDeletableRow, getListObserveTarget,
 } from './selectors'
 import {
   makeTarget, type NotebookTarget, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type PendingCreate,
@@ -88,13 +88,22 @@ export function init(root: ParentNode = document): () => void {
     },
   })
 
-  // 一覧が再描画されたらチェックボックスを注入し直す
+  // 一覧が再描画されたらチェックボックスを注入し直す。
   // アクションバー/進捗表示は document.body 側にあるため、再スキャン対象は
-  // ノートブック一覧コンテナに絞り、setProgress 等のテキスト更新で
-  // 無駄な再スキャンが走らないようにする。
+  // 一覧ページのルートに絞り、setProgress 等のテキスト更新で無駄な再スキャンが
+  // 走らないようにする。監視対象は安定祖先 welcome-page にする —— 表示モード切替
+  // （カード⇄一覧）で NotebookLM は .all-projects-container を新ノードに丸ごと置換
+  // するため、置換されるコンテナ自体を掴むと以後の再描画で observer が発火せず
+  // チェックボックスが再注入されない（2026-07-05 実機確認）。welcome-page は切替を
+  // 生き延びる。welcome-page が無い環境（テスト等）は .all-projects-container →
+  // body/root にフォールバックする。
   const observer = new MutationObserver(() => injectRowCheckboxes(store, root))
-  const listContainer = root.querySelector('.all-projects-container')
-  const container = listContainer ?? (root instanceof Document ? root.body : (root as Element)) ?? document.body
+  const observeTarget =
+    getListObserveTarget(root) ??
+    root.querySelector('.all-projects-container') ??
+    (root instanceof Document ? root.body : (root as Element)) ??
+    document.body
+  const container = observeTarget
   observer.observe(container, LIST_OBSERVE_OPTIONS)
 
   async function runDelete(): Promise<void> {

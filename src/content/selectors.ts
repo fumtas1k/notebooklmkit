@@ -10,6 +10,10 @@ export const SELECTORS = {
   confirmDialog: 'mat-dialog-container',
   confirmDeleteButton: 'button.primary-button',
   cancelButton: 'button.tertiary-button',
+  // 一覧ページの安定ルート。表示モード切替（カード⇄一覧）で .all-projects-container は
+  // 新ノードに置換されるが、この welcome-page は生存する（2026-07-05 実機確認・§8.5）。
+  // 再スキャン observer をここに張ることで、置換後の新テーブルにも再注入できる。
+  listRoot: 'welcome-page',
   // ---- 以下 Phase 2（ソース追加フロー）。2026-07-03 実機調査済み（requirements.md §8.6）。----
   // クラス churn に強いよう、テキスト / aria-label マッチング（SOURCE_TEXT）を主軸にしつつ、
   // 候補集合を安定クラス（drop-zone-icon-button 等）で絞って誤マッチを防ぐ。
@@ -52,6 +56,12 @@ export function isDeletableRow(row: HTMLElement): boolean {
 // ヘッダー行とズレるため、既存のタイトルセル内に注入する。
 export function getTitleCell(row: HTMLElement): HTMLElement | null {
   return row.querySelector<HTMLElement>(SELECTORS.titleCell)
+}
+
+// 再スキャン observer を張る安定祖先（表示モード切替で置換される .all-projects-container の
+// 生存する親）。見つからなければ null（呼び出し側がフォールバックする）。
+export function getListObserveTarget(root: ParentNode = document): HTMLElement | null {
+  return root.querySelector<HTMLElement>(SELECTORS.listRoot)
 }
 
 export function getDeleteMenuItem(root: ParentNode = document): HTMLElement | null {
