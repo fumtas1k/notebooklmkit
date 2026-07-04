@@ -54,6 +54,7 @@ UI が変わったら §0 で再検証し、`src/content/selectors.ts` だけを
   (a) 生成中カード要素の出現と表示テキストの描画のどちらが先か、(b) クリック→検知の遅延がどれくらいか、を確認する。
   DevTools で生成中カードの安定クラス（`getAudioGenerationCard` の候補セレクタが当たるか）を確認し、
   当たらなければ `selectors.ts` の候補を実 DOM に合わせて更新する。遅延が `clickInterval`（30s）に近い/超える場合は値を見直す。
+  - [ ] at-rest 誤検出なし: 新規ノートブックの Studio 初期状態（音声解説をまだ押していない時点）で、コンソール等で isGenerating 相当が false であること（生成カードセレクタが生成前に当たっていないこと）を確認する。
 
 issue #47: alarms ウォッチドッグ / tabId 別バッジ
 

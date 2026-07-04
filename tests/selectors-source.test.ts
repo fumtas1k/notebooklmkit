@@ -233,4 +233,12 @@ describe('getAudioGenerationCard', () => {
       </div>`
     expect(getAudioGenerationCard()).toBeNull()
   })
+
+  it('does not match generic status/busy elements (false-positive guard, #60)', () => {
+    document.body.innerHTML = `
+      <div role="status">音声解説を生成しています…</div>
+      <div aria-busy="true"><span>生成しています</span></div>
+      <div class="artifact-card">生成中</div>`
+    expect(getAudioGenerationCard()).toBeNull()
+  })
 })

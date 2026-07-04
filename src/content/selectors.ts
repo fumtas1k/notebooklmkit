@@ -157,12 +157,12 @@ export function getAudioOverviewButton(root: ParentNode = document): HTMLElement
 // main.ts の isGenerating で「テキスト一致 OR この要素の出現」の OR に使う（strictly more sensitive）。
 // 実 DOM の安定セレクタは未確定（実機確認待ち・§8.7）。best-effort: 生成中を表しうる安定クラス候補に
 // 絞り、その中で生成中テキストを含む要素を返す。該当なしは null（呼び出し側がテキスト判定にフォールバック）。
+// 汎用セレクタ（role=status 等）は生成中でない要素にも当たる false positive を招くため外し、
+// 音声/生成固有クラスに絞る（#60 最終レビュー指摘）。
 // 自拡張 UI（[data-nlk]）は除外。querySelectorAll + フィルタのみで throw しない。
 export function getAudioGenerationCard(root: ParentNode = document): HTMLElement | null {
   const candidates = Array.from(
-    root.querySelectorAll<HTMLElement>(
-      '.audio-overview-container, .artifact-card, [class*="generating"], [role="status"], [aria-busy="true"]',
-    ),
+    root.querySelectorAll<HTMLElement>('.audio-overview-container, [class*="generating"]'),
   ).filter((el) => !el.closest('[data-nlk]'))
   return candidates.find((el) => SOURCE_TEXT.audioGenerating.test(el.textContent ?? '')) ?? null
 }

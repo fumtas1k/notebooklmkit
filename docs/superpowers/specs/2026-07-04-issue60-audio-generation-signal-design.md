@@ -93,7 +93,7 @@ defaultCreateRunner (main.ts)
   - 既存テスト（成功 / 既生成中で押さない / 再試行して諦める / タイル不在 / aria-disabled）は維持。
     `isGenerating` 呼び出し回数が増える（プリチェック＋クリック直前）ため、呼び出し回数に依存する
     アサーションがあれば調整する。
-- `tests/selectors.test.ts`
+- `tests/selectors-source.test.ts`
   - `getAudioGenerationCard`: 生成中カード（スピナー付きコンテナ / テキスト「生成しています」）を
     含むフラグメントで要素を返す。該当なしのフラグメントで null を返す（＝ OR でテキスト判定に
     フォールバックする前提）。`[data-nlk]` 配下は除外。
