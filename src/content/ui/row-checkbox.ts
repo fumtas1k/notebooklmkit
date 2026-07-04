@@ -1,4 +1,4 @@
-import { getNotebookRows, getRowIdentity, getTitleCell, getRowKey } from '../selectors'
+import { getNotebookRows, getRowIdentity, getTitleCell, getRowKey, isDeletableRow } from '../selectors'
 import { makeTarget } from '../../types'
 import type { SelectionStore } from '../selection'
 import './row-checkbox.css'
@@ -13,6 +13,14 @@ export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = do
     // タイトル充填時の characterData / childList 変化で observer が再発火し、
     // そこで注入・同期される。
     if (!identity.title) continue
+    // 削除できない行（おすすめ = Reader ロール、3点メニュー無し）にはチェックボックスを
+    // 出さない（issue #23）。ノード再利用で削除可能行→削除不可行に化けた場合は
+    // 注入済みラベルを掃除する。
+    if (!isDeletableRow(row)) {
+      const existing = row.querySelector<HTMLElement>(`[${CHECKBOX_ATTR}]`)
+      existing?.closest('label[data-nlk="checkbox-hit"]')?.remove()
+      continue
+    }
     const target = makeTarget(identity)
     const existing = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
     if (existing) {

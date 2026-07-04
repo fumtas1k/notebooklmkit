@@ -26,6 +26,51 @@ describe('buildTargets', () => {
     expect(targets.map((t) => t.title)).toEqual(['A'])
     expect(targets.map((t) => t.key)).toEqual(['title:A'])
   })
+
+  // issue #23: おすすめ（Reader ロール）行は3点メニュー（moreButton）が無く削除起点も
+  // 無いため、たとえ選択キーがストアにあっても対象から除外する（防御。通常経路では
+  // そもそもチェックボックスが注入されないため選択され得ない）。
+  it('excludes a selected row that has no more button (non-deletable / recommended row)', () => {
+    document.body.innerHTML = `
+    <div class="all-projects-container"><project-table><table class="project-table"><tbody>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">Recommended</span></td></tr>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">Owned</span></td>
+        <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+    </tbody></table></project-table></div>`
+    const store = new SelectionStore()
+    // 通常経路では注入されないが、防御的な除外を検証するため直接キーを入れる。
+    store.set('title:Recommended', true)
+    store.set('title:Owned', true)
+    const targets = buildTargets(store)
+    expect(targets.map((t) => t.title)).toEqual(['Owned'])
+  })
+})
+
+describe('onSelectAll', () => {
+  beforeEach(() => { document.body.innerHTML = LIST })
+
+  // issue #23: 「すべて選択」は削除可能な行（moreButton あり）だけを選択に入れる。
+  it('selects only rows that have a more button, skipping recommended/Reader rows', () => {
+    document.body.innerHTML = `
+    <div class="all-projects-container"><project-table><table class="project-table"><tbody>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">Recommended</span></td></tr>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">Owned</span></td>
+        <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+    </tbody></table></project-table></div>`
+    const dispose = init()
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-select-all"]')!.click()
+
+    const rows = document.querySelectorAll('tr[mat-row]')
+    expect(rows[0].querySelector(`[${CHECKBOX_ATTR}]`)).toBeNull()
+    const ownedBox = rows[1].querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(ownedBox.checked).toBe(true)
+
+    // 選択件数表示も1件のみ（Recommended が幽霊選択として紛れ込んでいないこと）。
+    const count = document.querySelector('[data-nlk="bar-count"]')!
+    expect(count.textContent).toMatch(/^1/)
+
+    dispose()
+  })
 })
 
 describe('sameTargetKeys', () => {

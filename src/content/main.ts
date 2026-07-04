@@ -3,7 +3,7 @@ import {
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton, getCreateNewButton, getAudioOverviewButton,
-  getAudioGenerationCard, SOURCE_TEXT,
+  getAudioGenerationCard, SOURCE_TEXT, isDeletableRow,
 } from './selectors'
 import {
   makeTarget, type NotebookTarget, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type PendingCreate,
@@ -39,6 +39,9 @@ const LIST_OBSERVE_OPTIONS: MutationObserverInit = {
 export function buildTargets(store: SelectionStore, root: ParentNode = document): NotebookTarget[] {
   const selected = new Set(store.keys())
   return getNotebookRows(root)
+    // 削除不可行（moreButton 無し = おすすめ/Reader 行）は対象から除外する（防御。issue #23）。
+    // 通常経路ではチェックボックスが注入されないため選択され得ないが、明示除外で意図を固定する。
+    .filter(isDeletableRow)
     .map((row) => makeTarget(getRowIdentity(row)))
     .filter((tgt) => selected.has(tgt.key))
 }
@@ -75,7 +78,8 @@ export function init(root: ParentNode = document): () => void {
     t,
     handlers: {
       onSelectAll: () => {
-        store.replaceAll(getNotebookRows(root).map((r) => getRowKey(r)))
+        // 削除不可行（moreButton 無し = おすすめ/Reader 行）は選択に含めない（issue #23）。
+        store.replaceAll(getNotebookRows(root).filter(isDeletableRow).map((r) => getRowKey(r)))
         syncCheckboxes(store, root)
       },
       onClearAll: () => { store.clear(); syncCheckboxes(store, root) },
