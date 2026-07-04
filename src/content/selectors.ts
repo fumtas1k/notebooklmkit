@@ -180,6 +180,10 @@ function isRenderedVisible(el: HTMLElement): boolean {
 export function getAudioGenerationCard(root: ParentNode = document): HTMLElement | null {
   const candidates = Array.from(
     root.querySelectorAll<HTMLElement>('.audio-overview-container, [class*="generating"]'),
-  ).filter((el) => !el.closest('[data-nlk]') && isRenderedVisible(el))
-  return candidates.find((el) => SOURCE_TEXT.audioGenerating.test(el.textContent ?? '')) ?? null
+  ).filter((el) => !el.closest('[data-nlk]'))
+  // 安価なテキスト判定を先に評価し、一致した候補にだけ isRenderedVisible（getComputedStyle）を回す
+  // （無駄な style 計算を減らす。PR #63 再レビューの任意提案）。要素側 ⊆ テキスト側の不変条件は不変。
+  return candidates.find(
+    (el) => SOURCE_TEXT.audioGenerating.test(el.textContent ?? '') && isRenderedVisible(el),
+  ) ?? null
 }
