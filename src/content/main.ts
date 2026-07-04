@@ -3,6 +3,7 @@ import {
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton, getCreateNewButton, getAudioOverviewButton,
+  getAudioGenerationCard, SOURCE_TEXT,
 } from './selectors'
 import {
   makeTarget, type NotebookTarget, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type PendingCreate,
@@ -342,8 +343,11 @@ function defaultCreateRunner(root: ParentNode): (urls: string[]) => Promise<bool
       void triggerAudioOverview({
         getAudioOverviewButton: () => getAudioOverviewButton(root),
         click: (el) => { requestMainWorldClick(el) },
-        // 生成開始の検知（＝再試行停止 ＆ 二重生成防止）。Studio に「生成しています」等が出たか。
-        isGenerating: () => /生成しています|生成中|generating/i.test(document.body.innerText || ''),
+        // 生成開始の検知（＝再試行停止 ＆ 二重生成防止）。既存のテキスト判定に加え、生成カード要素の
+        // 出現も OR で見る（表示テキストの描画遅延より早く検知しうる。strictly more sensitive。#60）。
+        isGenerating: () =>
+          SOURCE_TEXT.audioGenerating.test(document.body.innerText || '') ||
+          getAudioGenerationCard(root) != null,
         waitFor,
       })
     }

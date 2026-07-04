@@ -87,14 +87,24 @@ function makeAudioDeps(over: Partial<AudioOverviewDeps> = {}): AudioOverviewDeps
 describe('triggerAudioOverview', () => {
   it('clicks and succeeds once generation starts', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    // 1回目クリック後に生成中を検知（pre-check は false、post-click で true）
+    // 再チェック導入後、クリック前に isGenerating は 2 回（ループ先頭プリチェック＋クリック直前）呼ばれる。
+    // 生成中になるのは post-click 待ちの 3 回目 → クリックは 1 回実行される。
     let calls = 0
-    const d = makeAudioDeps({ isGenerating: () => { calls++; return calls >= 2 } })
+    const d = makeAudioDeps({ isGenerating: () => { calls++; return calls >= 3 } })
     const ok = await triggerAudioOverview(d)
     expect(ok).toBe(true)
     expect(d.clicks).toHaveLength(1)
     expect(warn).not.toHaveBeenCalled()
     warn.mockRestore()
+  })
+
+  it('does not click when generation starts between pre-check and click (W1)', async () => {
+    // ループ先頭プリチェックでは false、クリック直前の再チェックで true → クリックせず成功。
+    let n = 0
+    const d = makeAudioDeps({ isGenerating: () => { n++; return n >= 2 } })
+    const ok = await triggerAudioOverview(d)
+    expect(ok).toBe(true)
+    expect(d.clicks).toEqual([])
   })
 
   it('does not click when generation is already in progress', async () => {

@@ -67,6 +67,8 @@ export const SOURCE_TEXT = {
   submit: /挿入|insert/i,
   createNew: /新規作成|ノートブックを新規作成|create new|new notebook/i,
   audioOverview: /音声解説|音声概要|audio overview/i,
+  // 音声生成中を表す Studio の表示テキスト（生成開始検知 = 再試行停止 ＆ 二重生成防止に使う。issue #60）。
+  audioGenerating: /生成しています|生成中|generating/i,
 } as const
 
 // ソースパネルの「追加」ボタン。自拡張が注入した UI（data-nlk 配下）は除外する。
@@ -148,4 +150,40 @@ export function getAudioOverviewButton(root: ParentNode = document): HTMLElement
     candidates.find(isAudio) ??
     null
   )
+}
+
+// 生成カード要素が実際にレンダリング上可視か。isGenerating のテキスト側（document.body.innerText、
+// 非表示テキストを除外）と意味論を揃え「要素側 ⊆ テキスト側」を保つことで、非表示/at-rest の
+// プレースホルダ文言による false positive（初回クリック抑止で音声が生成されない silent failure）を
+// 防ぐ（#60 PR #63 レビュー指摘1）。display:none / visibility:hidden / hidden 属性を祖先まで辿る。
+// offsetParent は jsdom で常に null になり使えないため getComputedStyle で判定する。
+function isRenderedVisible(el: HTMLElement): boolean {
+  const view = el.ownerDocument.defaultView
+  if (!view) return true
+  for (let node: HTMLElement | null = el; node; node = node.parentElement) {
+    if (node.hasAttribute('hidden')) return false
+    const s = view.getComputedStyle(node)
+    if (s.display === 'none' || s.visibility === 'hidden') return false
+  }
+  return true
+}
+
+// Studio の「音声解説を生成しています…」生成中カード（スピナー付きコンテナ）の要素を返す。
+// #60: 生成開始を表示テキスト（body.innerText 一致）より早く・確実に検知するための即時シグナル。
+// main.ts の isGenerating で「テキスト一致 OR この要素の出現」の OR に使う（strictly more sensitive）。
+// 実 DOM の安定セレクタは未確定（実機確認待ち・§8.7）。best-effort: 生成中を表しうる安定クラス候補に
+// 絞り、その中で生成中テキストを含む要素を返す。該当なしは null（呼び出し側がテキスト判定にフォールバック）。
+// 汎用セレクタ（role=status 等）は生成中でない要素にも当たる false positive を招くため外し、
+// 音声/生成固有クラスに絞る（#60 最終レビュー指摘）。候補は可視要素に限定し、非表示 at-rest テキスト
+// による false positive を防ぐ（要素側 ⊆ テキスト側。#60 PR #63 レビュー指摘1）。
+// 自拡張 UI（[data-nlk]）は除外。querySelectorAll + フィルタのみで throw しない。
+export function getAudioGenerationCard(root: ParentNode = document): HTMLElement | null {
+  const candidates = Array.from(
+    root.querySelectorAll<HTMLElement>('.audio-overview-container, [class*="generating"]'),
+  ).filter((el) => !el.closest('[data-nlk]'))
+  // 安価なテキスト判定を先に評価し、一致した候補にだけ isRenderedVisible（getComputedStyle）を回す
+  // （無駄な style 計算を減らす。PR #63 再レビューの任意提案）。要素側 ⊆ テキスト側の不変条件は不変。
+  return candidates.find(
+    (el) => SOURCE_TEXT.audioGenerating.test(el.textContent ?? '') && isRenderedVisible(el),
+  ) ?? null
 }
