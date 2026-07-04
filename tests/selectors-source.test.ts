@@ -241,4 +241,11 @@ describe('getAudioGenerationCard', () => {
       <div class="artifact-card">生成中</div>`
     expect(getAudioGenerationCard()).toBeNull()
   })
+
+  it('ignores hidden at-rest cards (display:none / hidden) — visibility guard (#60)', () => {
+    document.body.innerHTML = `
+      <div class="audio-overview-container" style="display:none">音声解説を生成しています…</div>
+      <div hidden><div class="audio-overview-container">生成しています</div></div>`
+    expect(getAudioGenerationCard()).toBeNull()
+  })
 })

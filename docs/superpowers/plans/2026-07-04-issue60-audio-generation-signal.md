@@ -123,9 +123,7 @@ export const SOURCE_TEXT = {
 // 自拡張 UI（[data-nlk]）は除外。querySelectorAll + フィルタのみで throw しない。
 export function getAudioGenerationCard(root: ParentNode = document): HTMLElement | null {
   const candidates = Array.from(
-    root.querySelectorAll<HTMLElement>(
-      '.audio-overview-container, .artifact-card, [class*="generating"], [role="status"], [aria-busy="true"]',
-    ),
+    root.querySelectorAll<HTMLElement>('.audio-overview-container, [class*="generating"]'),
   ).filter((el) => !el.closest('[data-nlk]'))
   return candidates.find((el) => SOURCE_TEXT.audioGenerating.test(el.textContent ?? '')) ?? null
 }
