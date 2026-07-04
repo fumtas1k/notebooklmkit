@@ -15,7 +15,7 @@ import { deleteNotebooks, type DeleterDeps } from './deleter'
 import { importUrls, type ImporterDeps } from './importer'
 import { createNotebookWithUrls, triggerAudioOverview } from './notebook-creator'
 import { listOpenTabs } from './tabs-bridge'
-import { waitFor, safeClick, setInputValue } from './dom-utils'
+import { waitFor, safeClick, pointerClick, setInputValue } from './dom-utils'
 
 export const VERSION = '0.1.0'
 
@@ -328,7 +328,8 @@ function defaultCreateRunner(root: ParentNode): (urls: string[]) => Promise<bool
     if (ok) {
       void triggerAudioOverview({
         getAudioOverviewButton: () => getAudioOverviewButton(root),
-        click: (el) => { safeClick(el) },
+        // タイルは div[role="button"]。合成 click では発火しないため実ポインタ列を送る（§8.7）
+        click: (el) => { pointerClick(el) },
         waitFor,
       })
     }

@@ -68,7 +68,7 @@ export interface AudioOverviewDeps {
 // #51: ノートブック作成後に音声解説（Audio Overview）の生成ボタンを1回押す。
 // 「ボタンが present かつ enabled（disabled でない）になるまで waitFor → click」。
 // ソース解析中はボタンが無効/未表示のことがあるため、既定タイムアウトは作成フロー（15s）より
-// 長い 30s（E2E で調整）。呼び出し側が best-effort で握りつぶすため、失敗（要素不在 / 無効の
+// 長い 60s（ソース解析待ち。E2E で調整）。呼び出し側が best-effort で握りつぶすため、失敗（要素不在 / 無効の
 // まま / タイムアウト / 中断）は例外を投げず false を返す（失敗時は console.warn で記録。
 // createNotebookWithUrls と同じ規約）。
 export async function triggerAudioOverview(
@@ -76,7 +76,7 @@ export async function triggerAudioOverview(
   opts: { signal?: AbortSignal } = {},
 ): Promise<boolean> {
   const { signal } = opts
-  const timeout = deps.timeout ?? 30000
+  const timeout = deps.timeout ?? 60000
   try {
     const btn = await deps.waitFor(() => {
       const b = deps.getAudioOverviewButton()
