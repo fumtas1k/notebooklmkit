@@ -322,17 +322,14 @@ function defaultCreateRunner(root: ParentNode): (urls: string[]) => Promise<bool
       waitFor,
     })
     // #51: 作成成功時のみ、音声解説の生成トリガーを best-effort で押す。
-    // 失敗しても作成成功（ok）は変えない（triggerAudioOverview は例外を投げないが防御的に try/catch）。
+    // fire-and-forget にして、作成結果の報告（バッジ '✓'）を音声トリガーの待機
+    // （最大 30s）から時間的に切り離す。失敗は console.warn のみ（作成成功 ok は変えない）。
     if (ok) {
-      try {
-        await triggerAudioOverview({
-          getAudioOverviewButton: () => getAudioOverviewButton(root),
-          click: (el) => { safeClick(el) },
-          waitFor,
-        })
-      } catch (err) {
-        console.warn('notebooklmkit: audio overview trigger failed', err)
-      }
+      void triggerAudioOverview({
+        getAudioOverviewButton: () => getAudioOverviewButton(root),
+        click: (el) => { safeClick(el) },
+        waitFor,
+      }).catch((err) => { console.warn('notebooklmkit: audio overview trigger failed', err) })
     }
     return ok
   }
