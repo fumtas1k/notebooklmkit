@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   createNotebookWithUrls, triggerAudioOverview,
   type CreatorDeps, type AudioOverviewDeps,
@@ -83,24 +83,33 @@ function makeAudioDeps(over: Partial<AudioOverviewDeps> = {}): AudioOverviewDeps
 
 describe('triggerAudioOverview', () => {
   it('clicks the audio-overview button when present and enabled', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const d = makeAudioDeps()
     const ok = await triggerAudioOverview(d)
     expect(ok).toBe(true)
     expect(d.clicks).toHaveLength(1)
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
   })
 
-  it('returns false without clicking when the button never appears', async () => {
+  it('returns false and warns when the button never appears', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const d = makeAudioDeps({ getAudioOverviewButton: () => null })
     const ok = await triggerAudioOverview(d)
     expect(ok).toBe(false)
     expect(d.clicks).toEqual([])
+    expect(warn).toHaveBeenCalledOnce()
+    warn.mockRestore()
   })
 
-  it('returns false while the button stays disabled (waits for enabled)', async () => {
+  it('returns false and warns while the button stays disabled (waits for enabled)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const disabled = { disabled: true } as unknown as HTMLElement
     const d = makeAudioDeps({ getAudioOverviewButton: () => disabled })
     const ok = await triggerAudioOverview(d)
     expect(ok).toBe(false)
     expect(d.clicks).toEqual([])
+    expect(warn).toHaveBeenCalledOnce()
+    warn.mockRestore()
   })
 })
