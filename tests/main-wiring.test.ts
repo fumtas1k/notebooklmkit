@@ -104,6 +104,69 @@ describe('init', () => {
   })
 })
 
+// 表示モード切替（カード⇄一覧）で NotebookLM は .all-projects-container を
+// 新ノードに丸ごと置換する。observer を安定祖先 welcome-page に張ることで、
+// 置換後の新テーブルにもチェックボックスが再注入されることを検証する。
+describe('init re-injects after view-mode switch (container swap)', () => {
+  const WRAPPED = (rows: string) => `
+  <welcome-page><div class="welcome-page-container"><div class="all-projects-container">
+    <project-table><table class="project-table"><tbody>${rows}</tbody></table></project-table>
+  </div></div></welcome-page>`
+
+  const ROW = (title: string) => `
+    <tr mat-row role="row"><td class="title-column"><span class="project-table-title">${title}</span></td>
+      <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>`
+
+  it('re-injects checkboxes into a freshly swapped .all-projects-container', async () => {
+    const root = document.createElement('div')
+    root.innerHTML = WRAPPED(ROW('A') + ROW('B'))
+    const dispose = init(root)
+    expect(root.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(2)
+
+    // 表示モード切替を模倣: .all-projects-container を別行を含む新ノードで置換する。
+    const wpc = root.querySelector('.welcome-page-container')!
+    wpc.querySelector('.all-projects-container')!.remove()
+    const fresh = document.createElement('div')
+    fresh.innerHTML = `<div class="all-projects-container"><project-table><table class="project-table"><tbody>${ROW('C') + ROW('D')}</tbody></table></project-table></div>`
+    wpc.appendChild(fresh.firstElementChild!)
+
+    // MutationObserver コールバックは microtask としてキューされる。
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const boxes = root.querySelectorAll(`[${CHECKBOX_ATTR}]`)
+    expect(boxes.length).toBe(2)
+    const titles = [...boxes].map((b) => b.getAttribute('aria-label')).sort()
+    expect(titles).toEqual(['C', 'D'])
+    dispose()
+  })
+
+  it('restores checked state from the selection store after the swap', async () => {
+    const root = document.createElement('div')
+    root.innerHTML = WRAPPED(ROW('A') + ROW('B'))
+    const dispose = init(root)
+    // A を選択（注入済みチェックボックスを change 発火でトグル）。
+    const boxA = [...root.querySelectorAll<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)]
+      .find((b) => b.getAttribute('aria-label') === 'A')!
+    boxA.checked = true
+    boxA.dispatchEvent(new Event('change'))
+
+    // 同名 A を含む新コンテナへ置換。
+    const wpc = root.querySelector('.welcome-page-container')!
+    wpc.querySelector('.all-projects-container')!.remove()
+    const fresh = document.createElement('div')
+    fresh.innerHTML = `<div class="all-projects-container"><project-table><table class="project-table"><tbody>${ROW('A') + ROW('C')}</tbody></table></project-table></div>`
+    wpc.appendChild(fresh.firstElementChild!)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const newBoxA = [...root.querySelectorAll<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)]
+      .find((b) => b.getAttribute('aria-label') === 'A')!
+    expect(newBoxA.checked).toBe(true)
+    dispose()
+  })
+})
+
 describe('start (async / SPA mount)', () => {
   it('waits for .all-projects-container to appear, then bootstraps init exactly once', async () => {
     // Use a detached, dedicated root: no `.all-projects-container` exists yet,
