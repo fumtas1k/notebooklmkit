@@ -64,14 +64,14 @@ export interface AudioOverviewDeps {
   // 生成が開始したか（Studio に「生成しています」等が出たか）。二重生成防止 ＆ 成功検知に使う。
   isGenerating(): boolean
   waitFor: typeof WaitFor
-  // 各クリック後に生成開始を待つ時間（ms）。既定 20s。
+  // 各クリック後に生成開始を待つ時間（ms）。既定 30s（生成中表示の遅延に対する二重生成防止マージン。issue #60）。
   timeout?: number
 }
 
 // タイルが present かつ enabled になるまで待つ内部タイムアウト（ms）。
 const TILE_WAIT_MS = 15000
 // 生成開始を確認できるまでの最大クリック回数。ソース解析完了前の「早すぎクリック」は空振りするため、
-// 間隔を空けて再試行する（各回 timeout だけ生成開始を待つ）。5 回 × 20s ≒ 100s を上限に解析完了を待つ。
+// 間隔を空けて再試行する（各回 timeout だけ生成開始を待つ）。5 回 × 30s ≒ 150s を上限に解析完了を待つ。
 const MAX_ATTEMPTS = 5
 
 // #51: ノートブック作成後に音声解説（Audio Overview）の生成を開始する。
@@ -85,7 +85,7 @@ export async function triggerAudioOverview(
   opts: { signal?: AbortSignal } = {},
 ): Promise<boolean> {
   const { signal } = opts
-  const clickInterval = deps.timeout ?? 20000
+  const clickInterval = deps.timeout ?? 30000
   const enabledTile = () => {
     const b = deps.getAudioOverviewButton()
     if (!b) return null
