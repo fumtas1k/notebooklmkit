@@ -1,5 +1,5 @@
 import {
-  LIST_TABS_MESSAGE, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type TabInfo, type PendingCreate,
+  LIST_TABS_MESSAGE, CREATE_RESULT_MESSAGE, type TabInfo, type PendingCreate,
 } from '../types'
 
 // chrome.tabs.query の結果からインポート候補になるタブだけを残す純関数。
@@ -54,35 +54,40 @@ export interface ClipDeps {
   storageGet(key: string): Promise<Record<string, unknown>>
   storageRemove(key: string): Promise<void>
   createTab(props: { url: string; active: boolean }): Promise<unknown>
-  setBadge(text: string): void
+  setBadge(text: string, tabId?: number): void
   now(): number
 }
 
 // ツールバーアイコンのクリック本体。現ページ URL を pendingCreate に置き、
 // NotebookLM ホームをフォアグラウンドで開く（content script が新規作成を実行）。
-export async function handleClipClick(clickedUrl: string | undefined, d: ClipDeps): Promise<void> {
+// tabId はクリック元タブ。バッジはすべてこのタブにスコープする（元タブ X に統一）。
+export async function handleClipClick(
+  clickedUrl: string | undefined,
+  tabId: number | undefined,
+  d: ClipDeps,
+): Promise<void> {
   if (!clickedUrl || !isHttpUrl(clickedUrl)) {
-    d.setBadge('!')
+    d.setBadge('!', tabId)
     return
   }
   // storage/tabs は reject し得る。失敗しても badge '!' に帰着させ '…' 固着を防ぐ。
   try {
-    const pending: PendingCreate = { urls: [clickedUrl], ts: d.now() }
+    const pending: PendingCreate = { urls: [clickedUrl], ts: d.now(), tabId }
     await d.storageSet({ pendingCreate: pending })
-    d.setBadge('…')
+    d.setBadge('…', tabId)
     await d.createTab({ url: NOTEBOOK_HOME, active: true })
   } catch {
     // M-1: storageSet 後に createTab が失敗すると pendingCreate が残留し、後で
     // 手動で NotebookLM を開いた際に意図しない自動作成を招く。二重障害でも
     // ここは投げずに badge '!' へ帰着させる。
     await d.storageRemove('pendingCreate').catch(() => {})
-    d.setBadge('!')
+    d.setBadge('!', tabId)
   }
 }
 
-// content からの作成結果でバッジを更新する。
-export function handleCreateResult(ok: boolean, d: Pick<ClipDeps, 'setBadge'>): void {
-  d.setBadge(ok ? '✓' : '!')
+// content からの作成結果でバッジを更新する（元タブにスコープ）。
+export function handleCreateResult(ok: boolean, tabId: number | undefined, d: Pick<ClipDeps, 'setBadge'>): void {
+  d.setBadge(ok ? '✓' : '!', tabId)
 }
 
 // I-1: content script が nlk:create-result を返せない経路（未ログインで
@@ -95,37 +100,46 @@ export async function resetStuckClip(
   d: Pick<ClipDeps, 'storageGet' | 'storageRemove' | 'setBadge'>,
 ): Promise<void> {
   const got = await d.storageGet('pendingCreate')
-  if (got.pendingCreate === undefined) return
-  d.setBadge('!')
+  const pending = got.pendingCreate as PendingCreate | undefined
+  if (pending === undefined) return
+  d.setBadge('!', pending.tabId)
   await d.storageRemove('pendingCreate')
 }
 
 // 実 chrome への配線（薄いグルー・非テスト）。chrome.action が無い環境では登録しない。
 if (typeof chrome !== 'undefined' && chrome.action?.onClicked) {
-  const clearLater = (t: string) => {
-    if (t === '✓' || t === '!') setTimeout(() => chrome.action.setBadgeText({ text: '' }), 4000)
+  const STUCK_ALARM = 'nlk-reset-stuck'
+  const clearLater = (t: string, tabId?: number) => {
+    if (t === '✓' || t === '!') {
+      setTimeout(() => {
+        chrome.action.setBadgeText(tabId !== undefined ? { text: '', tabId } : { text: '' }).catch(() => {})
+      }, 4000)
+    }
   }
   const deps: ClipDeps = {
     storageSet: (i) => chrome.storage.local.set(i),
     storageGet: (k) => chrome.storage.local.get(k),
     storageRemove: (k) => chrome.storage.local.remove(k),
     createTab: (p) => chrome.tabs.create(p),
-    setBadge: (text) => { void chrome.action.setBadgeText({ text }); clearLater(text) },
+    setBadge: (text, tabId) => {
+      chrome.action.setBadgeText(tabId !== undefined ? { text, tabId } : { text }).catch(() => {})
+      clearLater(text, tabId)
+    },
     now: () => Date.now(),
   }
-  chrome.action.onClicked.addListener((tab: { url?: string }) => {
-    void handleClipClick(tab?.url, deps)
-    // I-1: バッジ '…' 固着ウォッチドッグ（best-effort）。正常フローでは content が
-    // pendingCreate を実行前クリアするため、発火時には pendingCreate が無く no-op。
-    // 注意: MV3 の SW はアイドルで終了され得るため、この 60s タイマーは発火せず
-    // 失われることがある（content が走らないケースほど SW も終了しやすく空振りする）。
-    // 確実にするには chrome.alarms へ置換が必要（要 'alarms' 権限。follow-up issue）。
-    // 実害はバッジが '…' のまま残る程度で、次回クリップ時に上書きされ自己回復する。
-    setTimeout(() => void resetStuckClip(deps), PENDING_TTL_MS)
+  chrome.action.onClicked.addListener((tab: { id?: number; url?: string }) => {
+    void handleClipClick(tab?.url, tab?.id, deps)
+    // I-1: バッジ '…' 固着ウォッチドッグ。MV3 の SW はアイドルで終了され得るため
+    // setTimeout ではなく chrome.alarms を使う（SW 終了後も再起動して発火する）。
+    // 正常フローでは content が pendingCreate を実行前クリアするため resetStuckClip は no-op。
+    chrome.alarms.create(STUCK_ALARM, { delayInMinutes: 1 })
+  })
+  chrome.alarms.onAlarm.addListener((alarm: { name?: string }) => {
+    if (alarm.name === STUCK_ALARM) void resetStuckClip(deps)
   })
   chrome.runtime.onMessage.addListener((msg: unknown, sender: { id?: string }) => {
     if (sender.id !== chrome.runtime.id) return
-    const m = msg as { type?: string; ok?: boolean } | null
-    if (m?.type === CREATE_RESULT_MESSAGE) handleCreateResult(!!m.ok, deps)
+    const m = msg as { type?: string; ok?: boolean; tabId?: number } | null
+    if (m?.type === CREATE_RESULT_MESSAGE) handleCreateResult(!!m.ok, m.tabId, deps)
   })
 }

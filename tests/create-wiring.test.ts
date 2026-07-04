@@ -23,20 +23,20 @@ describe('handlePendingCreate', () => {
     expect(env.removed).toEqual([])
   })
 
-  it('runs a fresh pendingCreate, clears it first, and reports the result', async () => {
-    const env = makeEnv({ urls: ['https://a/'], ts: 1000 }, 1500)
+  it('runs a fresh pendingCreate, clears it first, and reports the result with tabId echoed', async () => {
+    const env = makeEnv({ urls: ['https://a/'], ts: 1000, tabId: 5 }, 1500)
     const run = vi.fn(async () => true)
     await handlePendingCreate(env, run)
     expect(env.removed).toEqual(['pendingCreate']) // 実行前クリア
     expect(run).toHaveBeenCalledWith(['https://a/'])
-    expect(env.sent).toEqual([{ type: CREATE_RESULT_MESSAGE, ok: true }])
+    expect(env.sent).toEqual([{ type: CREATE_RESULT_MESSAGE, ok: true, tabId: 5 }])
   })
 
   it('reports failure when run returns false', async () => {
-    const env = makeEnv({ urls: ['https://a/'], ts: 1000 }, 1500)
+    const env = makeEnv({ urls: ['https://a/'], ts: 1000, tabId: 5 }, 1500)
     const run = vi.fn(async () => false)
     await handlePendingCreate(env, run)
-    expect(env.sent).toEqual([{ type: CREATE_RESULT_MESSAGE, ok: false }])
+    expect(env.sent).toEqual([{ type: CREATE_RESULT_MESSAGE, ok: false, tabId: 5 }])
   })
 
   it('cleans up a stale pendingCreate without running', async () => {
@@ -49,10 +49,17 @@ describe('handlePendingCreate', () => {
   })
 
   it('reports failure and does not throw when run rejects (M-3)', async () => {
-    const env = makeEnv({ urls: ['https://a/'], ts: 1000 }, 1500)
+    const env = makeEnv({ urls: ['https://a/'], ts: 1000, tabId: 5 }, 1500)
     const run = vi.fn(async () => { throw new Error('dom blew up') })
     await expect(handlePendingCreate(env, run)).resolves.toBeUndefined()
     expect(env.removed).toEqual(['pendingCreate'])
-    expect(env.sent).toEqual([{ type: CREATE_RESULT_MESSAGE, ok: false }])
+    expect(env.sent).toEqual([{ type: CREATE_RESULT_MESSAGE, ok: false, tabId: 5 }])
+  })
+
+  it('echoes tabId undefined when pendingCreate has no tabId', async () => {
+    const env = makeEnv({ urls: ['https://a/'], ts: 1000 }, 1500)
+    const run = vi.fn(async () => true)
+    await handlePendingCreate(env, run)
+    expect(env.sent).toEqual([{ type: CREATE_RESULT_MESSAGE, ok: true, tabId: undefined }])
   })
 })

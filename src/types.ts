@@ -50,9 +50,11 @@ export const LIST_TABS_MESSAGE = 'nlk:list-tabs'
 
 // F2-2（現ページから新規ノートブック作成）: 実行待ちの URL 群（storage.local）。
 // 実行後クリア＋ts 古さガードで残留を無視する。
+// tabId はクリック元タブ（バッジ表示先）。tab.id 欠落時は undefined。
 export interface PendingCreate {
   urls: string[]
   ts: number
+  tabId?: number
 }
 
 // content → background: 新規ノートブック作成の結果（バッジ更新用）。
