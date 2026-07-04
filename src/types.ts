@@ -59,5 +59,14 @@ export interface PendingCreate {
 
 // content → background: 新規ノートブック作成の結果（バッジ更新用）。
 export const CREATE_RESULT_MESSAGE = 'nlk:create-result'
+
+// 隔離ワールド content → 主ワールド content の「このタイルを実クリックして」ブリッジ。
+// Angular Material の音声解説生成タイル（div[role=button]）は、隔離ワールド由来の合成イベントに
+// 反応しない（主ワールドの instanceof 判定等に落ちる）。そのためページと同一の主ワールドで動く
+// content script（world: 'MAIN'）に postMessage して実ポインタ列でクリックさせる（§8.7・2026-07-04 実機確認）。
+export const MAIN_WORLD_CLICK_MESSAGE = 'nlk:click-main-world'
+// 主ワールド側がクリック対象を一意に特定するための一時マーカー属性（クリック後に除去）。
+// getAudioOverviewButton の [data-nlk] 除外にはかからない別属性名。
+export const CLICK_TARGET_ATTR = 'data-nlk-click-target'
 // pendingCreate の有効期限（ms）。超過分は実行せず掃除する。
 export const PENDING_TTL_MS = 60000

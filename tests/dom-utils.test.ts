@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { waitFor, safeClick, pointerClick, delay, setInputValue, TimeoutError, AbortError } from '../src/content/dom-utils'
+import { waitFor, safeClick, delay, setInputValue, TimeoutError, AbortError } from '../src/content/dom-utils'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -34,27 +34,6 @@ describe('safeClick', () => {
   })
   it('returns false for null', () => {
     expect(safeClick(null)).toBe(false)
-  })
-})
-
-describe('pointerClick', () => {
-  it('dispatches a mouse/pointer sequence ending in click on a div[role=button]', () => {
-    const el = document.createElement('div')
-    el.setAttribute('role', 'button')
-    document.body.appendChild(el)
-    const seen: string[] = []
-    for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
-      el.addEventListener(t, () => seen.push(t))
-    }
-    expect(pointerClick(el)).toBe(true)
-    // click は必ず発火し、シーケンスの最後であること（PointerEvent 非対応環境では pointer 系は省略される）
-    expect(seen).toContain('mousedown')
-    expect(seen).toContain('mouseup')
-    expect(seen[seen.length - 1]).toBe('click')
-    el.remove()
-  })
-  it('returns false for null', () => {
-    expect(pointerClick(null)).toBe(false)
   })
 })
 

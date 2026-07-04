@@ -4,7 +4,10 @@ import {
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton, getCreateNewButton, getAudioOverviewButton,
 } from './selectors'
-import { makeTarget, type NotebookTarget, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type PendingCreate } from '../types'
+import {
+  makeTarget, type NotebookTarget, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type PendingCreate,
+  MAIN_WORLD_CLICK_MESSAGE, CLICK_TARGET_ATTR,
+} from '../types'
 import { SelectionStore } from './selection'
 import { detectLang, createT } from './i18n'
 import { injectRowCheckboxes, CHECKBOX_ATTR } from './ui/row-checkbox'
@@ -15,7 +18,7 @@ import { deleteNotebooks, type DeleterDeps } from './deleter'
 import { importUrls, type ImporterDeps } from './importer'
 import { createNotebookWithUrls, triggerAudioOverview } from './notebook-creator'
 import { listOpenTabs } from './tabs-bridge'
-import { waitFor, safeClick, pointerClick, setInputValue } from './dom-utils'
+import { waitFor, safeClick, setInputValue } from './dom-utils'
 
 export const VERSION = '0.1.0'
 
@@ -309,6 +312,16 @@ function defaultCreateEnv(): CreateEnv {
   }
 }
 
+// 音声解説タイルのクリックを background 経由で主ワールドに依頼する。対象要素を一時マーカー属性で
+// 指し、background が chrome.scripting.executeScript({ world:'MAIN' }) でページ主ワールドから実クリック
+// する（隔離ワールドの合成イベントは Angular Material タイルに効かない。CSP 免除の executeScript を使う。§8.7）。
+function requestMainWorldClick(el: HTMLElement | null | undefined): void {
+  if (!el) return
+  el.setAttribute(CLICK_TARGET_ATTR, '1')
+  const c = (globalThis as { chrome?: { runtime?: { sendMessage?: (m: unknown) => void } } }).chrome
+  c?.runtime?.sendMessage?.({ type: MAIN_WORLD_CLICK_MESSAGE })
+}
+
 function defaultCreateRunner(root: ParentNode): (urls: string[]) => Promise<boolean> {
   return async (urls) => {
     const ok = await createNotebookWithUrls(urls, {
@@ -322,14 +335,15 @@ function defaultCreateRunner(root: ParentNode): (urls: string[]) => Promise<bool
       waitFor,
     })
     // #51: 作成成功時のみ、音声解説の生成トリガーを best-effort で押す。
-    // fire-and-forget にして、作成結果の報告（バッジ '✓'）を音声トリガーの待機
-    // （最大 30s）から時間的に切り離す。triggerAudioOverview は失敗を内部で握って
-    // false を返し（console.warn 済み）reject しないため、作成成功 ok には影響しない。
+    // fire-and-forget にして、作成結果の報告（バッジ '✓'）を音声トリガーの待機・再試行から
+    // 時間的に切り離す。triggerAudioOverview は失敗を内部で握って false を返し reject しないため、
+    // 作成成功 ok には影響しない。クリックは主ワールド（background の executeScript）経由（§8.7）。
     if (ok) {
       void triggerAudioOverview({
         getAudioOverviewButton: () => getAudioOverviewButton(root),
-        // タイルは div[role="button"]。合成 click では発火しないため実ポインタ列を送る（§8.7）
-        click: (el) => { pointerClick(el) },
+        click: (el) => { requestMainWorldClick(el) },
+        // 生成開始の検知（＝再試行停止 ＆ 二重生成防止）。Studio に「生成しています」等が出たか。
+        isGenerating: () => /生成しています|生成中|generating/i.test(document.body.innerText || ''),
         waitFor,
       })
     }
