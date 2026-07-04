@@ -70,6 +70,7 @@ content script（`src/content/`）と、タブ列挙のみを行う最小の bac
 
 - **PR は squash マージ**。件名は `<日本語の説明> (#PR番号)`（例: `#36: 現在ページから新規ノートブックを作成 (#46)`）、本文末尾に `Closes #issue番号`。`gh pr merge <n> --squash --delete-branch` を使う。
 - **spec / plan ドキュメントも feature ブランチ側でコミットする。** main に直コミットすると squash マージ後にローカル main が origin/main と分岐する（復旧は `git reset --hard origin/main`。squash 済みなら内容は保全される）。
+- **stacked PR の base を `--delete-branch` で squash マージすると、上段 PR は main に retarget されず自動クローズする**（reopen 不可）。回避策: (1) スタックせず独立ブランチにする、または (2) 上段を先に `gh pr edit <上段> --base main` で main に retarget してから下段を `--delete-branch` でマージする。復旧: 上段の固有コミットを `git rebase --onto origin/main <旧base先端>` で main に載せ替え → `git push --force-with-lease` → main 向けに**新規 PR** を作成（旧 PR には新 PR への案内コメントを残す）。
 - **マージ後は post-merge-retro ルーチンを回す**（振り返り→CLAUDE.md/scripts/skills 改善提案→承認で PR）。セッション内 `gh pr merge` ならフックが自動リマインドする（GitHub UI マージは対象外なので手動実行）。
 
 ## 計画ドキュメント
