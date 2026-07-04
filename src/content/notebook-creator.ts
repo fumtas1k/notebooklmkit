@@ -69,7 +69,8 @@ export interface AudioOverviewDeps {
 // 「ボタンが present かつ enabled（disabled でない）になるまで waitFor → click」。
 // ソース解析中はボタンが無効/未表示のことがあるため、既定タイムアウトは作成フロー（15s）より
 // 長い 30s（E2E で調整）。呼び出し側が best-effort で握りつぶすため、失敗（要素不在 / 無効の
-// まま / タイムアウト / 中断）は例外を投げず false を返す（createNotebookWithUrls と同じ規約）。
+// まま / タイムアウト / 中断）は例外を投げず false を返す（失敗時は console.warn で記録。
+// createNotebookWithUrls と同じ規約）。
 export async function triggerAudioOverview(
   deps: AudioOverviewDeps,
   opts: { signal?: AbortSignal } = {},
@@ -85,6 +86,9 @@ export async function triggerAudioOverview(
     deps.click(btn)
     return true
   } catch {
+    // 暫定セレクタ（§8.7・実機未確認）が実機 DOM と一致せず、要素不在 / 無効のまま /
+    // タイムアウト / 中断した場合の唯一の観測点。実機堅牢化の調査のため必ずログを残す。
+    console.warn('notebooklmkit: audio overview trigger did not fire (button not found or stayed disabled within timeout)')
     return false
   }
 }
