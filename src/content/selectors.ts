@@ -11,7 +11,8 @@ export const SELECTORS = {
   confirmDeleteButton: 'button.primary-button',
   cancelButton: 'button.tertiary-button',
   // 一覧ページの安定ルート。表示モード切替（カード⇄一覧）で .all-projects-container は
-  // 新ノードに置換されるが、この welcome-page は生存する（2026-07-05 実機確認・§8.5）。
+  // 新ノードに置換されるが、この welcome-page は生存する（2026-07-05 実機確認。
+  // 記録は docs/superpowers/specs/2026-07-05-view-switch-checkbox-reinject-design.md）。
   // 再スキャン observer をここに張ることで、置換後の新テーブルにも再注入できる。
   listRoot: 'welcome-page',
   // ---- 以下 Phase 2（ソース追加フロー）。2026-07-03 実機調査済み（requirements.md §8.6）。----
