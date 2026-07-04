@@ -67,6 +67,8 @@ export const SOURCE_TEXT = {
   submit: /挿入|insert/i,
   createNew: /新規作成|ノートブックを新規作成|create new|new notebook/i,
   audioOverview: /音声解説|音声概要|audio overview/i,
+  // 音声生成中を表す Studio の表示テキスト（生成開始検知 = 再試行停止 ＆ 二重生成防止に使う。issue #60）。
+  audioGenerating: /生成しています|生成中|generating/i,
 } as const
 
 // ソースパネルの「追加」ボタン。自拡張が注入した UI（data-nlk 配下）は除外する。
@@ -148,4 +150,19 @@ export function getAudioOverviewButton(root: ParentNode = document): HTMLElement
     candidates.find(isAudio) ??
     null
   )
+}
+
+// Studio の「音声解説を生成しています…」生成中カード（スピナー付きコンテナ）の要素を返す。
+// #60: 生成開始を表示テキスト（body.innerText 一致）より早く・確実に検知するための即時シグナル。
+// main.ts の isGenerating で「テキスト一致 OR この要素の出現」の OR に使う（strictly more sensitive）。
+// 実 DOM の安定セレクタは未確定（実機確認待ち・§8.7）。best-effort: 生成中を表しうる安定クラス候補に
+// 絞り、その中で生成中テキストを含む要素を返す。該当なしは null（呼び出し側がテキスト判定にフォールバック）。
+// 自拡張 UI（[data-nlk]）は除外。querySelectorAll + フィルタのみで throw しない。
+export function getAudioGenerationCard(root: ParentNode = document): HTMLElement | null {
+  const candidates = Array.from(
+    root.querySelectorAll<HTMLElement>(
+      '.audio-overview-container, .artifact-card, [class*="generating"], [role="status"], [aria-busy="true"]',
+    ),
+  ).filter((el) => !el.closest('[data-nlk]'))
+  return candidates.find((el) => SOURCE_TEXT.audioGenerating.test(el.textContent ?? '')) ?? null
 }

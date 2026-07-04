@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton, getCreateNewButton,
-  getAudioOverviewButton,
+  getAudioOverviewButton, getAudioGenerationCard,
 } from '../src/content/selectors'
 
 describe('source-flow selectors', () => {
@@ -203,5 +203,34 @@ describe('source-flow selectors', () => {
       <button aria-label="音声解説をカスタマイズ">chevron_forward</button>
       <div role="button" class="create-artifact-button-container" aria-label="音声解説"><span>音声解説</span></div>`
     expect(getAudioOverviewButton()?.classList.contains('create-artifact-button-container')).toBe(true)
+  })
+})
+
+describe('getAudioGenerationCard', () => {
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  it('returns a candidate-class card that contains generating text', () => {
+    document.body.innerHTML = `
+      <div class="audio-overview-container">
+        <span>音声解説を生成しています…</span>
+      </div>`
+    const card = getAudioGenerationCard()
+    expect(card).not.toBeNull()
+    expect(card?.classList.contains('audio-overview-container')).toBe(true)
+  })
+
+  it('returns null when no candidate card contains generating text', () => {
+    document.body.innerHTML = `
+      <div class="audio-overview-container"><span>音声解説</span></div>
+      <p>関係ないテキスト</p>`
+    expect(getAudioGenerationCard()).toBeNull()
+  })
+
+  it('ignores cards inside injected [data-nlk] UI', () => {
+    document.body.innerHTML = `
+      <div data-nlk="action-bar">
+        <div class="audio-overview-container"><span>生成しています</span></div>
+      </div>`
+    expect(getAudioGenerationCard()).toBeNull()
   })
 })
