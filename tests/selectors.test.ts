@@ -82,4 +82,25 @@ describe('getListObserveTarget', () => {
     root.innerHTML = '<div class="all-projects-container"></div>'
     expect(getListObserveTarget(root)).toBeNull()
   })
+  it('falls back to .welcome-page-container when welcome-page is absent', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<div class="welcome-page-container"><div class="all-projects-container"></div></div>'
+    expect(getListObserveTarget(root)?.classList.contains('welcome-page-container')).toBe(true)
+  })
+  it('falls back to .app-body when neither welcome-page nor .welcome-page-container is present', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<div class="app-body"><div class="all-projects-container"></div></div>'
+    expect(getListObserveTarget(root)?.classList.contains('app-body')).toBe(true)
+  })
+  it('prefers welcome-page over .welcome-page-container when both are present', () => {
+    const root = document.createElement('div')
+    root.innerHTML =
+      '<div class="welcome-page-container"><welcome-page><div class="all-projects-container"></div></welcome-page></div>'
+    expect(getListObserveTarget(root)?.tagName.toLowerCase()).toBe('welcome-page')
+  })
+  it('returns null when no stable ancestor candidate is present', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<div class="all-projects-container"></div>'
+    expect(getListObserveTarget(root)).toBeNull()
+  })
 })

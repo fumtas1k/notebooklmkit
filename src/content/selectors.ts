@@ -23,6 +23,12 @@ export const SELECTORS = {
   sourceChipCandidates: 'mat-chip, .mdc-evolution-chip, [role="option"], button.drop-zone-icon-button',
 } as const
 
+// 再スキャン observer を張る安定祖先の候補（表示モード切替で置換される
+// .all-projects-container の生存する親）。前ほど狭く堅い。2026-07-05 実機で
+// list⇄card 往復を通して生存・単一インスタンスを確認。先頭から順に試し、
+// 単一タグ（welcome-page）のリネームで即バグ再発しないよう多段にする。
+const LIST_ROOT_SELECTORS = [SELECTORS.listRoot, '.welcome-page-container', '.app-body'] as const
+
 export function getNotebookRows(root: ParentNode = document): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(SELECTORS.row))
 }
@@ -60,9 +66,15 @@ export function getTitleCell(row: HTMLElement): HTMLElement | null {
 }
 
 // 再スキャン observer を張る安定祖先（表示モード切替で置換される .all-projects-container の
-// 生存する親）。見つからなければ null（呼び出し側がフォールバックする）。
+// 生存する親）。LIST_ROOT_SELECTORS を先頭（＝より狭く堅い）から順に試し、最初に見つかった
+// 要素を返す。単一タグ（welcome-page）がリネームされても、より広い祖先へ多段フォールバック
+// することで無言のバグ再発を緩和する。どの候補も見つからなければ null（呼び出し側がフォールバックする）。
 export function getListObserveTarget(root: ParentNode = document): HTMLElement | null {
-  return root.querySelector<HTMLElement>(SELECTORS.listRoot)
+  for (const sel of LIST_ROOT_SELECTORS) {
+    const el = root.querySelector<HTMLElement>(sel)
+    if (el) return el
+  }
+  return null
 }
 
 export function getDeleteMenuItem(root: ParentNode = document): HTMLElement | null {
