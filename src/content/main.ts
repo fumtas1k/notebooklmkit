@@ -2,7 +2,7 @@ import {
   getNotebookRows, getRowIdentity, findRowByIdentity, getRowKey,
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
   getAddSourceButton, getSourceDialog, getWebsiteChip,
-  getSourceUrlInput, getSourceSubmitButton, getCreateNewButton,
+  getSourceUrlInput, getSourceSubmitButton, getCreateNewButton, getAudioOverviewButton,
 } from './selectors'
 import { makeTarget, type NotebookTarget, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type PendingCreate } from '../types'
 import { SelectionStore } from './selection'
@@ -13,7 +13,7 @@ import { mountImportPanel } from './ui/import-panel'
 import { confirmDeletion } from './confirm-dialog'
 import { deleteNotebooks, type DeleterDeps } from './deleter'
 import { importUrls, type ImporterDeps } from './importer'
-import { createNotebookWithUrls } from './notebook-creator'
+import { createNotebookWithUrls, triggerAudioOverview } from './notebook-creator'
 import { listOpenTabs } from './tabs-bridge'
 import { waitFor, safeClick, setInputValue } from './dom-utils'
 
@@ -310,8 +310,8 @@ function defaultCreateEnv(): CreateEnv {
 }
 
 function defaultCreateRunner(root: ParentNode): (urls: string[]) => Promise<boolean> {
-  return (urls) =>
-    createNotebookWithUrls(urls, {
+  return async (urls) => {
+    const ok = await createNotebookWithUrls(urls, {
       getCreateNewButton: () => getCreateNewButton(root),
       getSourceDialog: () => getSourceDialog(),
       getWebsiteChip,
@@ -321,6 +321,21 @@ function defaultCreateRunner(root: ParentNode): (urls: string[]) => Promise<bool
       click: (el) => { safeClick(el) },
       waitFor,
     })
+    // #51: 作成成功時のみ、音声解説の生成トリガーを best-effort で押す。
+    // 失敗しても作成成功（ok）は変えない（triggerAudioOverview は例外を投げないが防御的に try/catch）。
+    if (ok) {
+      try {
+        await triggerAudioOverview({
+          getAudioOverviewButton: () => getAudioOverviewButton(root),
+          click: (el) => { safeClick(el) },
+          waitFor,
+        })
+      } catch (err) {
+        console.warn('notebooklmkit: audio overview trigger failed', err)
+      }
+    }
+    return ok
+  }
 }
 
 // NotebookLM は pushState 遷移でイベントが取れない Angular SPA のため、
