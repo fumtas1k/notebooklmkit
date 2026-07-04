@@ -58,6 +58,8 @@ content script（`src/content/`）と、タブ列挙のみを行う最小の bac
 
 - **DI ＋純粋ロジックでテスト可能に。** 主要なロジックモジュール（deleter, selection, i18n, dom-utils）は `document` を直接触らない —— 協力オブジェクトを受け取るか、`root: ParentNode` 引数（既定は `document`）を取ることで、テストが jsdom フラグメントを渡せるようにしている。新しいロジックもこのパターンに従うこと。`src/content/*.ts` には対応する `tests/*.test.ts` がある。
 - **注入する DOM には `data-nlk` 属性を付ける**（例: `data-nlk="action-bar"`）。チェックボックスのホストセルは `CHECKBOX_ATTR` を使う。注入要素の検索 / 二重注入防止や、テストのフックに使う。
+- **「OR 追加だから悪化しない（strictly better）」は意味論の真部分集合を確認してから主張する。** 既存判定に新判定を OR で足す変更で「最悪でも現状同等」と言えるのは、新判定が true のとき既存判定も（いずれ）true になる＝**新 ⊆ 既存**が成り立つ場合だけ。片方が漏らす false positive 経路があると、抑止ガード等の用途で silent failure を招く。特に**要素テキストの可視性は非対称**: `document.body.innerText` は非表示テキスト（`display:none` 等）を除外するが、要素の `el.textContent` は**非表示も含む**。この非対称を見落とすと「新 ⊄ 既存」になる（issue #60 で音声解説の生成検知が該当。実例は `getAudioGenerationCard` / `docs/requirements.md` §8.7）。
+- **要素の可視性判定は jsdom で `offsetParent` / `checkVisibility()` を使わない**（jsdom では `offsetParent` が常に null になりテストで全要素が不可視扱いになる）。祖先を辿って `getComputedStyle` の `display === 'none'` / `visibility === 'hidden'` と `hidden` 属性を見る保守的判定にする（jsdom でもインラインスタイルに対して決定的に動く。実装例は `selectors.ts` の `isRenderedVisible`）。
 - **ストア公開を見据えた制約**（`docs/requirements.md` §3.3）: 権限最小化（`host_permissions: notebooklm.google.com` のみ ——`manifest.config.ts` 参照）、外部ネットワーク送信ゼロ / トラッカー無し、日英 i18n。これらは維持すること。
 - Linter / フォーマッタは未設定。静的チェックのゲートは `npm run typecheck`（strict モード。未使用のローカル変数 / 引数はエラー）。
 
