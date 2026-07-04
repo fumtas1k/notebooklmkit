@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton, getCreateNewButton,
+  getAudioOverviewButton,
 } from '../src/content/selectors'
 
 describe('source-flow selectors', () => {
@@ -142,5 +143,40 @@ describe('source-flow selectors', () => {
   it('getCreateNewButton ignores buttons injected by this extension', () => {
     document.body.innerHTML = `<div data-nlk="x"><button class="create-new-button">新規作成</button></div>`
     expect(getCreateNewButton()).toBeNull()
+  })
+
+  it('getAudioOverviewButton matches ja「音声解説」text', () => {
+    document.body.innerHTML = `
+      <button>メモを追加</button>
+      <button><span>音声解説を生成</span></button>`
+    expect(getAudioOverviewButton()?.textContent).toContain('音声解説')
+  })
+
+  it('getAudioOverviewButton matches ja「音声概要」text', () => {
+    document.body.innerHTML = `<button><span>音声概要</span></button>`
+    expect(getAudioOverviewButton()?.textContent).toContain('音声概要')
+  })
+
+  it('getAudioOverviewButton matches en「Audio Overview」text and aria-label', () => {
+    document.body.innerHTML = `<button>Generate Audio Overview</button>`
+    expect(getAudioOverviewButton()?.textContent).toContain('Audio Overview')
+    document.body.innerHTML = `<button aria-label="Audio Overview"><span>▶</span></button>`
+    expect(getAudioOverviewButton()?.getAttribute('aria-label')).toBe('Audio Overview')
+  })
+
+  it('getAudioOverviewButton ignores buttons injected by this extension', () => {
+    document.body.innerHTML = `<div data-nlk="x"><button>音声解説</button></div>`
+    expect(getAudioOverviewButton()).toBeNull()
+  })
+
+  it('getAudioOverviewButton does not match unrelated buttons', () => {
+    document.body.innerHTML = `<button>ノートを追加</button>`
+    expect(getAudioOverviewButton()).toBeNull()
+  })
+
+  it('getAudioOverviewButton returns a disabled matching button (enabled-check is the caller responsibility)', () => {
+    document.body.innerHTML = `<button disabled><span>音声解説を生成</span></button>`
+    // セレクタは disabled でも返す。有効化待ちは triggerAudioOverview 側で行う（getSourceSubmitButton と同じ分離）。
+    expect(getAudioOverviewButton()).not.toBeNull()
   })
 })
