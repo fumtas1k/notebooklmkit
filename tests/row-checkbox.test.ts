@@ -2,10 +2,14 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { injectRowCheckboxes, CHECKBOX_ATTR } from '../src/content/ui/row-checkbox'
 import { SelectionStore } from '../src/content/selection'
 
+// 各行に moreButton（削除可能な行のマーカー。issue #23）を持たせる。moreButton の
+// 有無に関するテストは各テスト内で個別のフィクスチャを使う。
 const LIST = `
 <project-table><table class="project-table"><tbody>
-  <tr mat-row role="row"><td class="title-column"><span class="project-table-title">A</span></td></tr>
-  <tr mat-row role="row"><td class="title-column"><span class="project-table-title">B</span></td></tr>
+  <tr mat-row role="row"><td class="title-column"><span class="project-table-title">A</span></td>
+    <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+  <tr mat-row role="row"><td class="title-column"><span class="project-table-title">B</span></td>
+    <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
 </tbody></table></project-table>`
 
 describe('injectRowCheckboxes', () => {
@@ -39,8 +43,9 @@ describe('injectRowCheckboxes', () => {
     const store = new SelectionStore()
     injectRowCheckboxes(store)
     const row = document.querySelector('tr[mat-row]')!
-    // no extra <td> added: row still has exactly its original one cell
-    expect(row.querySelectorAll('td').length).toBe(1)
+    // no extra <td> added: row still has exactly its original two cells
+    // (title-column + actions-column, per the fixture)
+    expect(row.querySelectorAll('td').length).toBe(2)
     // checkbox lives inside the title cell, not as a sibling column
     const titleCell = row.querySelector('td.title-column')!
     expect(titleCell.querySelector(`[${CHECKBOX_ATTR}]`)).not.toBeNull()
@@ -226,7 +231,8 @@ describe('injectRowCheckboxes', () => {
     const store = new SelectionStore()
     document.body.innerHTML = `
     <project-table><table class="project-table"><tbody>
-      <tr mat-row role="row"><td class="title-column"><span class="project-table-title"></span></td></tr>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title"></span></td>
+        <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
     </tbody></table></project-table>`
     injectRowCheckboxes(store)
     expect(document.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(0)
@@ -254,5 +260,47 @@ describe('injectRowCheckboxes', () => {
     expect(box.getAttribute(CHECKBOX_ATTR)).toBe('title:A')
     expect(box.getAttribute('aria-label')).toBe('A')
     expect(box.checked).toBe(true)
+  })
+
+  // issue #23: 「おすすめのノートブック」(Reader ロール) 行には3点メニュー
+  // (moreButton) が DOM に存在しない。削除起点が無い行にチェックボックスを
+  // 出すと、選択してもクリックの起点が無く削除が無言 no-op になる。
+  // moreButton の有無で削除可否を判定する（ロール文字列はロケール依存で
+  // 脆いため採用しない。実機で誤分類ゼロを確認済み）。
+  it('does not inject a checkbox into a row without a more button (issue #23: recommended/Reader row)', () => {
+    const store = new SelectionStore()
+    document.body.innerHTML = `
+    <project-table><table class="project-table"><tbody>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">Recommended</span></td></tr>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">Owned</span></td>
+        <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+    </tbody></table></project-table>`
+    injectRowCheckboxes(store)
+    const rows = document.querySelectorAll('tr[mat-row]')
+    expect(rows[0].querySelector(`[${CHECKBOX_ATTR}]`)).toBeNull()
+    expect(rows[1].querySelector(`[${CHECKBOX_ATTR}]`)).not.toBeNull()
+  })
+
+  // issue #23 補足（防御的）: Angular のノード再利用で、既にチェックボックスが
+  // 注入済みの行が削除不可行（moreButton 無し）に化けた場合、幽霊選択を防ぐため
+  // 注入済みラベルを除去する。
+  it('removes an already-injected checkbox when the row is reused as a non-deletable row (issue #23)', () => {
+    const store = new SelectionStore()
+    document.body.innerHTML = `
+    <project-table><table class="project-table"><tbody>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">Owned</span></td>
+        <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+    </tbody></table></project-table>`
+    injectRowCheckboxes(store)
+    const row = document.querySelector('tr[mat-row]')!
+    expect(row.querySelector(`[${CHECKBOX_ATTR}]`)).not.toBeNull()
+
+    // ノード再利用をシミュレート: moreButton が消え、削除不可の「おすすめ」行になる
+    row.querySelector('project-action-button')!.remove()
+    row.querySelector('span.project-table-title')!.textContent = 'Recommended'
+    injectRowCheckboxes(store)
+
+    expect(row.querySelector(`[${CHECKBOX_ATTR}]`)).toBeNull()
+    expect(row.querySelector('label[data-nlk="checkbox-hit"]')).toBeNull()
   })
 })

@@ -26,6 +26,51 @@ describe('buildTargets', () => {
     expect(targets.map((t) => t.title)).toEqual(['A'])
     expect(targets.map((t) => t.key)).toEqual(['title:A'])
   })
+
+  // issue #23: おすすめ（Reader ロール）行は3点メニュー（moreButton）が無く削除起点も
+  // 無いため、たとえ選択キーがストアにあっても対象から除外する（防御。通常経路では
+  // そもそもチェックボックスが注入されないため選択され得ない）。
+  it('excludes a selected row that has no more button (non-deletable / recommended row)', () => {
+    document.body.innerHTML = `
+    <div class="all-projects-container"><project-table><table class="project-table"><tbody>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">Recommended</span></td></tr>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">Owned</span></td>
+        <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+    </tbody></table></project-table></div>`
+    const store = new SelectionStore()
+    // 通常経路では注入されないが、防御的な除外を検証するため直接キーを入れる。
+    store.set('title:Recommended', true)
+    store.set('title:Owned', true)
+    const targets = buildTargets(store)
+    expect(targets.map((t) => t.title)).toEqual(['Owned'])
+  })
+})
+
+describe('onSelectAll', () => {
+  beforeEach(() => { document.body.innerHTML = LIST })
+
+  // issue #23: 「すべて選択」は削除可能な行（moreButton あり）だけを選択に入れる。
+  it('selects only rows that have a more button, skipping recommended/Reader rows', () => {
+    document.body.innerHTML = `
+    <div class="all-projects-container"><project-table><table class="project-table"><tbody>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">Recommended</span></td></tr>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">Owned</span></td>
+        <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+    </tbody></table></project-table></div>`
+    const dispose = init()
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-select-all"]')!.click()
+
+    const rows = document.querySelectorAll('tr[mat-row]')
+    expect(rows[0].querySelector(`[${CHECKBOX_ATTR}]`)).toBeNull()
+    const ownedBox = rows[1].querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    expect(ownedBox.checked).toBe(true)
+
+    // 選択件数表示も1件のみ（Recommended が幽霊選択として紛れ込んでいないこと）。
+    const count = document.querySelector('[data-nlk="bar-count"]')!
+    expect(count.textContent).toMatch(/^1/)
+
+    dispose()
+  })
 })
 
 describe('sameTargetKeys', () => {
@@ -250,6 +295,40 @@ describe('runDelete error recovery', () => {
     expect(document.querySelectorAll('[data-nlk="confirm-dialog"]').length).toBe(1)
     document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  // issue #23 レビュー指摘1: buildTargets / onSelectAll が削除可能行のみを対象に
+  // するようになったので、runDelete の isSelectAll 判定（件数タイプ確認の発火条件）
+  // も削除可能行だけを分母にしなければならない。削除不可行（Reader）を分母に残すと、
+  // 混在リストで削除可能行を全選択しても targets.length < totalRows となって
+  // isSelectAll が false に希薄化し、以前は発火していた strong confirm が漏れる。
+  it('fires the strong confirm when all deletable rows are selected in a mixed list', () => {
+    // 削除可能2行（A / B）＋ Reader 1行。削除可能行は STRONG_CONFIRM_THRESHOLD 未満なので、
+    // strong confirm はもっぱら isSelectAll 経由でしか発火しない。
+    const root = document.createElement('div')
+    root.innerHTML = `
+    <div class="all-projects-container"><project-table><table class="project-table"><tbody>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">Recommended</span></td></tr>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">A</span></td>
+        <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+      <tr mat-row role="row"><td class="title-column"><span class="project-table-title">B</span></td>
+        <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+    </tbody></table></project-table></div>`
+    const dispose = init(root)
+
+    // アクションバーは document.body に mount される（dedup 無し）。他テストが残した
+    // バーと取り違えないよう、最後に mount した自分のバーの操作要素だけを叩く。
+    const bars = document.querySelectorAll('[data-nlk="action-bar"]')
+    const bar = bars[bars.length - 1]
+    bar.querySelector<HTMLButtonElement>('[data-nlk="bar-select-all"]')!.click()
+    bar.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.click()
+
+    // 削除可能行 2 件を全選択 → isSelectAll=true → 件数タイプ確認（confirm-input あり）。
+    expect(document.querySelector('[data-nlk="confirm-input"]')).not.toBeNull()
+
+    // 後片付け: ダイアログを閉じ、overlay / document キャプチャリスナーを残さない。
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-cancel"]')!.click()
+    dispose()
   })
 
   // issue #16: 削除処理が pending の間に init() の disposer が呼ばれると、

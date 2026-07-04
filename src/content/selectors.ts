@@ -41,6 +41,13 @@ export function getMoreButton(row: HTMLElement): HTMLElement | null {
   return row.querySelector<HTMLElement>(SELECTORS.moreButton)
 }
 
+// 削除可能な行か（= 3点メニュー moreButton を持つ行）。おすすめ（Reader ロール）行は
+// moreButton が DOM に無いため false（ロール文字列はロケール依存で脆いので moreButton で
+// 判定。2026-07-04 実機で「すべて」タブ337行 owner=有/reader=無 の誤分類ゼロを確認。issue #23）。
+export function isDeletableRow(row: HTMLElement): boolean {
+  return getMoreButton(row) != null
+}
+
 // チェックボックスを入れるホストセル（タイトル列）。新しい列を足すと
 // ヘッダー行とズレるため、既存のタイトルセル内に注入する。
 export function getTitleCell(row: HTMLElement): HTMLElement | null {
