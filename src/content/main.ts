@@ -2,7 +2,7 @@ import {
   getNotebookRows, getRowIdentity, findRowByIdentity, getRowKey,
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
   getAddSourceButton, getSourceDialog, getWebsiteChip,
-  getSourceUrlInput, getSourceSubmitButton, getCreateNewButton,
+  getSourceUrlInput, getSourceSubmitButton, getCreateNewButton, getAudioOverviewButton,
 } from './selectors'
 import { makeTarget, type NotebookTarget, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type PendingCreate } from '../types'
 import { SelectionStore } from './selection'
@@ -13,7 +13,7 @@ import { mountImportPanel } from './ui/import-panel'
 import { confirmDeletion } from './confirm-dialog'
 import { deleteNotebooks, type DeleterDeps } from './deleter'
 import { importUrls, type ImporterDeps } from './importer'
-import { createNotebookWithUrls } from './notebook-creator'
+import { createNotebookWithUrls, triggerAudioOverview } from './notebook-creator'
 import { listOpenTabs } from './tabs-bridge'
 import { waitFor, safeClick, setInputValue } from './dom-utils'
 
@@ -310,8 +310,8 @@ function defaultCreateEnv(): CreateEnv {
 }
 
 function defaultCreateRunner(root: ParentNode): (urls: string[]) => Promise<boolean> {
-  return (urls) =>
-    createNotebookWithUrls(urls, {
+  return async (urls) => {
+    const ok = await createNotebookWithUrls(urls, {
       getCreateNewButton: () => getCreateNewButton(root),
       getSourceDialog: () => getSourceDialog(),
       getWebsiteChip,
@@ -321,6 +321,19 @@ function defaultCreateRunner(root: ParentNode): (urls: string[]) => Promise<bool
       click: (el) => { safeClick(el) },
       waitFor,
     })
+    // #51: 作成成功時のみ、音声解説の生成トリガーを best-effort で押す。
+    // fire-and-forget にして、作成結果の報告（バッジ '✓'）を音声トリガーの待機
+    // （最大 30s）から時間的に切り離す。triggerAudioOverview は失敗を内部で握って
+    // false を返し（console.warn 済み）reject しないため、作成成功 ok には影響しない。
+    if (ok) {
+      void triggerAudioOverview({
+        getAudioOverviewButton: () => getAudioOverviewButton(root),
+        click: (el) => { safeClick(el) },
+        waitFor,
+      })
+    }
+    return ok
+  }
 }
 
 // NotebookLM は pushState 遷移でイベントが取れない Angular SPA のため、

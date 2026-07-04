@@ -66,6 +66,7 @@ export const SOURCE_TEXT = {
   websiteChip: /ウェブサイト|website/i,
   submit: /挿入|insert/i,
   createNew: /新規作成|ノートブックを新規作成|create new|new notebook/i,
+  audioOverview: /音声解説|音声概要|audio overview/i,
 } as const
 
 // ソースパネルの「追加」ボタン。自拡張が注入した UI（data-nlk 配下）は除外する。
@@ -124,4 +125,19 @@ export function getSourceSubmitButton(dialog: HTMLElement): HTMLElement | null {
   // 死んだ button[type="submit"] フォールバックは撤去（無関係な submit の誤クリック防止）。
   const buttons = Array.from(dialog.querySelectorAll<HTMLElement>('button'))
   return buttons.find((b) => SOURCE_TEXT.submit.test((b.textContent ?? '').trim())) ?? null
+}
+
+// Studio パネルの「音声解説 / 音声概要 / Audio Overview」生成ボタン。
+// 暫定セレクタ（実機未確認 —— docs/requirements.md §8.7）。§8.6 と同じく text / aria-label
+// マッチを主軸にし、自拡張 UI（[data-nlk]）は除外する。実機調査後に安定クラス（mat-*/mdc-*）で
+// 候補を絞って堅牢化する。disabled でも返す（有効化待ちは triggerAudioOverview 側の責務）。
+export function getAudioOverviewButton(root: ParentNode = document): HTMLElement | null {
+  const buttons = Array.from(root.querySelectorAll<HTMLElement>('button')).filter(
+    (b) => !b.closest('[data-nlk]'),
+  )
+  return (
+    buttons.find((b) => SOURCE_TEXT.audioOverview.test(b.getAttribute('aria-label') ?? '')) ??
+    buttons.find((b) => SOURCE_TEXT.audioOverview.test(b.textContent ?? '')) ??
+    null
+  )
 }
