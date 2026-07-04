@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { createNotebookWithUrls, type CreatorDeps } from '../src/content/notebook-creator'
+import {
+  createNotebookWithUrls, triggerAudioOverview,
+  type CreatorDeps, type AudioOverviewDeps,
+} from '../src/content/notebook-creator'
 
 // waitFor の代役: fn() が truthy ならそれを返し、falsy なら「タイムアウト」で投げる。
 const fakeWaitFor = (async (fn: () => unknown) => {
@@ -63,5 +66,41 @@ describe('createNotebookWithUrls', () => {
     const ok = await createNotebookWithUrls(['https://a/'], d)
     // disabled のままなら submit 待ちがタイムアウト → false
     expect(ok).toBe(false)
+  })
+})
+
+function makeAudioDeps(over: Partial<AudioOverviewDeps> = {}): AudioOverviewDeps & { clicks: HTMLElement[] } {
+  const btn = { disabled: false } as unknown as HTMLElement
+  const clicks: HTMLElement[] = []
+  return {
+    clicks,
+    getAudioOverviewButton: () => btn,
+    click: (el) => { clicks.push(el) },
+    waitFor: fakeWaitFor,
+    ...over,
+  }
+}
+
+describe('triggerAudioOverview', () => {
+  it('clicks the audio-overview button when present and enabled', async () => {
+    const d = makeAudioDeps()
+    const ok = await triggerAudioOverview(d)
+    expect(ok).toBe(true)
+    expect(d.clicks).toHaveLength(1)
+  })
+
+  it('returns false without clicking when the button never appears', async () => {
+    const d = makeAudioDeps({ getAudioOverviewButton: () => null })
+    const ok = await triggerAudioOverview(d)
+    expect(ok).toBe(false)
+    expect(d.clicks).toEqual([])
+  })
+
+  it('returns false while the button stays disabled (waits for enabled)', async () => {
+    const disabled = { disabled: true } as unknown as HTMLElement
+    const d = makeAudioDeps({ getAudioOverviewButton: () => disabled })
+    const ok = await triggerAudioOverview(d)
+    expect(ok).toBe(false)
+    expect(d.clicks).toEqual([])
   })
 })
