@@ -127,17 +127,25 @@ export function getSourceSubmitButton(dialog: HTMLElement): HTMLElement | null {
   return buttons.find((b) => SOURCE_TEXT.submit.test((b.textContent ?? '').trim())) ?? null
 }
 
-// Studio パネルの「音声解説 / 音声概要 / Audio Overview」生成ボタン。
-// 暫定セレクタ（実機未確認 —— docs/requirements.md §8.7）。§8.6 と同じく text / aria-label
-// マッチを主軸にし、自拡張 UI（[data-nlk]）は除外する。実機調査後に安定クラス（mat-*/mdc-*）で
-// 候補を絞って堅牢化する。disabled でも返す（有効化待ちは triggerAudioOverview 側の責務）。
+// Studio パネルの「音声解説」生成タイル。実 DOM（2026-07-04 実機確認・§8.7）は
+// div[role="button"].create-artifact-button-container（aria-label="音声解説"）で <button> ではない。
+// 1回クリックで即・音声生成が始まる（カスタマイズダイアログは開かない）。同じ「音声解説」語を含む
+// 「音声解説をカスタマイズ」chevron（button.edit-button）を取り違えると設定ダイアログが開くだけで
+// 生成されないため、aria-label に「カスタマイズ / customize」を含むものは除外する。安定クラス
+// create-artifact-button-container を優先し、無ければ button / [role="button"] のテキスト一致に
+// フォールバック。自拡張 UI（[data-nlk]）は除外。disabled 判定は triggerAudioOverview の責務。
 export function getAudioOverviewButton(root: ParentNode = document): HTMLElement | null {
-  const buttons = Array.from(root.querySelectorAll<HTMLElement>('button')).filter(
-    (b) => !b.closest('[data-nlk]'),
-  )
+  const isAudio = (el: Element): boolean => {
+    const aria = el.getAttribute('aria-label') ?? ''
+    if (/カスタマイズ|customize/i.test(aria)) return false
+    return SOURCE_TEXT.audioOverview.test(aria) || SOURCE_TEXT.audioOverview.test(el.textContent ?? '')
+  }
+  const candidates = Array.from(
+    root.querySelectorAll<HTMLElement>('.create-artifact-button-container, button, [role="button"]'),
+  ).filter((el) => !el.closest('[data-nlk]'))
   return (
-    buttons.find((b) => SOURCE_TEXT.audioOverview.test(b.getAttribute('aria-label') ?? '')) ??
-    buttons.find((b) => SOURCE_TEXT.audioOverview.test(b.textContent ?? '')) ??
+    candidates.find((el) => el.classList.contains('create-artifact-button-container') && isAudio(el)) ??
+    candidates.find(isAudio) ??
     null
   )
 }

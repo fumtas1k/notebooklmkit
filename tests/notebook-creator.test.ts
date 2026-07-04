@@ -70,7 +70,9 @@ describe('createNotebookWithUrls', () => {
 })
 
 function makeAudioDeps(over: Partial<AudioOverviewDeps> = {}): AudioOverviewDeps & { clicks: HTMLElement[] } {
-  const btn = { disabled: false } as unknown as HTMLElement
+  const btn = document.createElement('div')
+  btn.setAttribute('role', 'button')
+  btn.setAttribute('aria-label', '音声解説')
   const clicks: HTMLElement[] = []
   return {
     clicks,
@@ -102,9 +104,25 @@ describe('triggerAudioOverview', () => {
     warn.mockRestore()
   })
 
-  it('returns false and warns while the button stays disabled (waits for enabled)', async () => {
+  it('returns false and warns while the button stays disabled via aria-disabled (waits for enabled)', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const disabled = { disabled: true } as unknown as HTMLElement
+    const disabled = document.createElement('div')
+    disabled.setAttribute('role', 'button')
+    disabled.setAttribute('aria-label', '音声解説')
+    disabled.setAttribute('aria-disabled', 'true')
+    const d = makeAudioDeps({ getAudioOverviewButton: () => disabled })
+    const ok = await triggerAudioOverview(d)
+    expect(ok).toBe(false)
+    expect(d.clicks).toEqual([])
+    expect(warn).toHaveBeenCalledOnce()
+    warn.mockRestore()
+  })
+
+  it('returns false and warns while a native button stays disabled', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const disabled = document.createElement('button')
+    disabled.setAttribute('aria-label', '音声解説')
+    disabled.disabled = true
     const d = makeAudioDeps({ getAudioOverviewButton: () => disabled })
     const ok = await triggerAudioOverview(d)
     expect(ok).toBe(false)

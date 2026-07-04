@@ -81,7 +81,9 @@ export async function triggerAudioOverview(
     const btn = await deps.waitFor(() => {
       const b = deps.getAudioOverviewButton()
       if (!b) return null
-      return (b as HTMLButtonElement).disabled ? null : b
+      // タイルは div[role="button"]。無効化は native disabled か aria-disabled="true" で表現される。
+      const disabled = (b as HTMLButtonElement).disabled === true || b.getAttribute('aria-disabled') === 'true'
+      return disabled ? null : b
     }, { timeout, signal })
     deps.click(btn)
     return true

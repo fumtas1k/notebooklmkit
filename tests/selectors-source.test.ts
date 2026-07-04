@@ -179,4 +179,29 @@ describe('source-flow selectors', () => {
     // セレクタは disabled でも返す。有効化待ちは triggerAudioOverview 側で行う（getSourceSubmitButton と同じ分離）。
     expect(getAudioOverviewButton()).not.toBeNull()
   })
+
+  it('getAudioOverviewButton targets the create-artifact tile (div[role=button]) not the customize chevron', () => {
+    // 実 DOM: 生成タイルは div[role=button].create-artifact-button-container、右上に
+    // button.edit-button[aria-label="音声解説をカスタマイズ"]。後者を押すとカスタマイズだけ開く。
+    document.body.innerHTML = `
+      <div role="button" class="create-artifact-button-container" aria-label="音声解説">
+        <span class="create-label-container">音声解説</span>
+        <button class="edit-button" aria-label="音声解説をカスタマイズ">chevron_forward</button>
+      </div>`
+    const el = getAudioOverviewButton()
+    expect(el?.classList.contains('create-artifact-button-container')).toBe(true)
+    expect(el?.getAttribute('aria-label')).toBe('音声解説')
+  })
+
+  it('getAudioOverviewButton excludes a standalone 音声解説をカスタマイズ chevron', () => {
+    document.body.innerHTML = `<button class="edit-button" aria-label="音声解説をカスタマイズ">chevron_forward</button>`
+    expect(getAudioOverviewButton()).toBeNull()
+  })
+
+  it('getAudioOverviewButton prefers the create-artifact tile over an unrelated button match', () => {
+    document.body.innerHTML = `
+      <button aria-label="音声解説をカスタマイズ">chevron_forward</button>
+      <div role="button" class="create-artifact-button-container" aria-label="音声解説"><span>音声解説</span></div>`
+    expect(getAudioOverviewButton()?.classList.contains('create-artifact-button-container')).toBe(true)
+  })
 })
