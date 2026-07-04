@@ -41,11 +41,27 @@ if [ -z "$command_str" ]; then
     exit 0
 fi
 
-# "gh pr merge" を含むコマンドのみ対象。
-case "$command_str" in
-    *"gh pr merge"*) ;;
-    *) exit 0 ;;
-esac
+# コマンド文字列を代表的な区切り（; && || | 改行）で分割し、各セグメントの
+# 先頭が `gh pr merge`（sudo 経由も許容）であるものだけを対象にする。
+# 単純な部分文字列一致だと、コミットメッセージのヒアドキュメント本文などに
+# 説明文として "gh pr merge" という語句が混ざっただけで誤反応してしまうため
+# （実際に、このフックの実装コミット自体のメッセージ文中の記述で誤検知した）。
+normalized="$(printf '%s' "$command_str" | sed -E 's/&&|\|\||;|\|/\n/g')"
+
+matched=0
+while IFS= read -r seg; do
+    trimmed="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    if printf '%s' "$trimmed" | grep -Eiq '^(sudo[[:space:]]+)?gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)'; then
+        matched=1
+        break
+    fi
+done <<EOF
+$normalized
+EOF
+
+if [ "$matched" -ne 1 ]; then
+    exit 0
+fi
 
 # 成功判定。booleanフィールドは `//` だと false 自体がフォールバックを
 # 誘発してしまう（jq では false/null のみ falsy）ため、明示的な比較で真偽値化する。
