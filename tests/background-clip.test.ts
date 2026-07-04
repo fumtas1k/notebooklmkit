@@ -37,7 +37,7 @@ describe('handleClipClick', () => {
     const d = makeDeps()
     await handleClipClick('https://x.example/', 7, d)
     expect(d.set).toHaveBeenCalledWith({ pendingCreate: { urls: ['https://x.example/'], ts: 1000, tabId: 7 } })
-    expect(d.created).toEqual([{ url: 'https://notebooklm.google.com/', active: true }])
+    expect(d.created).toEqual([{ url: 'https://notebooklm.google.com/', active: false }])
     expect(d.badges).toContainEqual({ text: '…', tabId: 7 })
   })
 
