@@ -59,8 +59,9 @@ export interface ClipDeps {
 }
 
 // ツールバーアイコンのクリック本体。現ページ URL を pendingCreate に置き、
-// NotebookLM ホームをフォアグラウンドで開く（content script が新規作成を実行）。
-// tabId はクリック元タブ。バッジはすべてこのタブにスコープする（元タブ X に統一）。
+// NotebookLM ホームを active:false でバックグラウンドに開く（content script が
+// 新規作成を実行）。元タブをアクティブのまま保つため（#50）。バッジは元タブ X に
+// スコープするので（#47）、元タブがアクティブのまま '…'→'✓'/'!' がそのまま見える。
 export async function handleClipClick(
   clickedUrl: string | undefined,
   tabId: number | undefined,
@@ -75,7 +76,7 @@ export async function handleClipClick(
     const pending: PendingCreate = { urls: [clickedUrl], ts: d.now(), tabId }
     await d.storageSet({ pendingCreate: pending })
     d.setBadge('…', tabId)
-    await d.createTab({ url: NOTEBOOK_HOME, active: true })
+    await d.createTab({ url: NOTEBOOK_HOME, active: false })
   } catch {
     // M-1: storageSet 後に createTab が失敗すると pendingCreate が残留し、後で
     // 手動で NotebookLM を開いた際に意図しない自動作成を招く。二重障害でも
