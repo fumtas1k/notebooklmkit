@@ -98,12 +98,12 @@ export function init(root: ParentNode = document): () => void {
   // 生き延びる。welcome-page が無い環境（テスト等）は .all-projects-container →
   // body/root にフォールバックする。
   const observer = new MutationObserver(() => injectRowCheckboxes(store, root))
-  const observeTarget =
+  // container 名は削除完了後 finally の再接続 observer.observe(container, …) が参照するため維持する。
+  const container =
     getListObserveTarget(root) ??
     root.querySelector('.all-projects-container') ??
     (root instanceof Document ? root.body : (root as Element)) ??
     document.body
-  const container = observeTarget
   observer.observe(container, LIST_OBSERVE_OPTIONS)
 
   async function runDelete(): Promise<void> {
