@@ -57,4 +57,28 @@ describe('action bar', () => {
     bar.destroy()
     expect(document.querySelector('[data-nlk="action-bar"]')).toBeNull()
   })
+
+  it('uses the injected count callback instead of store.size', () => {
+    const store = new SelectionStore()
+    store.replaceAll(['a', 'b', 'c']) // store.size = 3
+    let visible = 1
+    mountActionBar({ store, t, handlers: noop, count: () => visible })
+    expect(document.querySelector('[data-nlk="bar-count"]')!.textContent).toContain('1')
+    expect(document.querySelector('[data-nlk="bar-count"]')!.textContent).not.toContain('3')
+    const del = document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!
+    expect(del.textContent).toContain('1')
+    expect(del.disabled).toBe(false)
+  })
+
+  it('refresh() re-evaluates the count callback', () => {
+    const store = new SelectionStore()
+    store.replaceAll(['a', 'b'])
+    let visible = 2
+    const bar = mountActionBar({ store, t, handlers: noop, count: () => visible })
+    expect(document.querySelector('[data-nlk="bar-count"]')!.textContent).toContain('2')
+    visible = 0
+    bar.refresh()
+    expect(document.querySelector('[data-nlk="bar-count"]')!.textContent).toContain('0')
+    expect(document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.disabled).toBe(true)
+  })
 })

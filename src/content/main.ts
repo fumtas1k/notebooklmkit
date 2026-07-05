@@ -76,6 +76,7 @@ export function init(root: ParentNode = document): () => void {
   const bar = mountActionBar({
     store,
     t,
+    count: () => buildTargets(store, root).length,
     handlers: {
       onSelectAll: () => {
         // 削除不可行（moreButton 無し = おすすめ/Reader 行）は選択に含めない（issue #23）。
@@ -99,7 +100,13 @@ export function init(root: ParentNode = document): () => void {
   // いずれの安定祖先候補も切替を生き延びる（実機確認済み）。多段フォールバックに
   // より、いずれか単体がリネームされてもすぐには再発しない。どの候補も無い環境
   // （テスト等）は .all-projects-container → body/root にフォールバックする。
-  const observer = new MutationObserver(() => injectRowCheckboxes(store, root))
+  // 行の再注入に加え、アクションバー件数（選択×可視 = buildTargets 相当）も再同期する。
+  // リネーム/削除で行が消えると残留選択キー（幽霊選択）が生じるが、件数は可視選択のみを
+  // 数えるため、再描画のたびに refresh して表示ズレを防ぐ（issue #31）。
+  const observer = new MutationObserver(() => {
+    injectRowCheckboxes(store, root)
+    bar.refresh()
+  })
   // container 名は削除完了後 finally の再接続 observer.observe(container, …) が参照するため維持する。
   const container =
     getListObserveTarget(root) ??
@@ -164,8 +171,12 @@ export function init(root: ParentNode = document): () => void {
         } else {
           bar.setProgress(t('doneSummary', { ok: result.succeeded.length, ng: result.failed.length }))
         }
-        // 成功分のみ選択解除
-        for (const key of result.succeeded) store.set(key, false)
+        // 成功分のみ選択解除。1回の emit に畳む（1件ずつ store.set すると emit ごとに
+        // action-bar の件数再計算 buildTargets（O(行数)）が走り、解除件数分の重複スキャン
+        // になるため。残す = 現在の選択キーから成功分を除いた集合。幽霊選択キーは保持される
+        // （成功していないため。残留キー方針と整合。issue #31）。
+        const succeededKeys = new Set(result.succeeded)
+        store.replaceAll(store.keys().filter((k) => !succeededKeys.has(k)))
         syncCheckboxes(store, root)
       } catch (err) {
         console.error('notebooklmkit: unexpected error during delete', err)

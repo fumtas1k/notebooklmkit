@@ -73,6 +73,33 @@ describe('onSelectAll', () => {
   })
 })
 
+describe('action bar count = visible selection (issue #31)', () => {
+  beforeEach(() => { document.body.innerHTML = LIST })
+
+  it('counts only visible selection and updates on list mutation (ghost excluded)', async () => {
+    const dispose = init()
+    // すべて選択（A, B）→ 件数2
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-select-all"]')!.click()
+    const count = document.querySelector('[data-nlk="bar-count"]')!
+    expect(count.textContent).toContain('2')
+
+    // B の行を DOM から削除（NotebookLM 側削除／リネーム消失を模擬）。
+    // 選択キー title:B は store に残る（幽霊選択）が、可視行は A のみ。
+    const rows = document.querySelectorAll('tr[mat-row]')
+    rows[1].remove()
+
+    // 一覧再描画 observer（マイクロタスク）発火を待つ → bar.refresh() で再計算。
+    await new Promise((r) => setTimeout(r, 0))
+
+    // 件数は可視選択（A の1件）のみ。幽霊 title:B は数えない。
+    expect(count.textContent).toContain('1')
+    expect(count.textContent).not.toContain('2')
+    // 削除ボタンのラベルも可視件数（1件）に統一されている。
+    expect(document.querySelector('[data-nlk="bar-delete"]')!.textContent).toContain('1')
+    dispose()
+  })
+})
+
 describe('sameTargetKeys', () => {
   const tgt = (title: string) => makeTarget({ title })
 
