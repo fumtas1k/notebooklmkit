@@ -26,7 +26,7 @@ npx vitest run -t "aborts"             # 名前指定で単一テスト
 
 ## アーキテクチャ
 
-content script（`src/content/`）と background service worker（`src/background/main.ts`）で構成される（popup はまだ無い）。壊れやすい部分とテスト可能なロジックを意図的に分離する設計。background は当初「タブ列挙のみ」だったが、F2-2 で役割が増えた: (1) 同一ウィンドウのタブ URL 列挙（`nlk:list-tabs`）、(2) ツールバーアイコン `chrome.action.onClicked` を起点に新規作成タブを開き `pendingCreate` を storage 保存、(3) 作成の進捗をタブ別バッジ（`…`/`✓`/`!`）で表示し、`chrome.alarms` で `…` 固着を検知するウォッチドッグ（MV3 SW のアイドル終了に耐える。issue #47）、(4) 音声解説タイルを主ワールドで実クリックする `chrome.scripting.executeScript({ world:'MAIN' })`（隔離ワールドの合成イベントは Angular Material タイルに効かないため。§8.7）。使用権限は `tabs` / `storage` / `alarms` / `scripting`（`manifest.config.ts`。用途は各行コメント参照。いずれも F2-2 のため）。
+content script（`src/content/`）と background service worker（`src/background/main.ts`）で構成される（popup はまだ無い）。壊れやすい部分とテスト可能なロジックを意図的に分離する設計。background は当初「タブ列挙のみ」だったが、F2-2 で役割が増えた: (1) 同一ウィンドウのタブ URL 列挙（`nlk:list-tabs`）、(2) ツールバーアイコン `chrome.action.onClicked` を起点に新規作成タブを開き `pendingCreate` を storage 保存、(3) 作成の進捗をタブ別バッジ（`…`/`✓`/`!`）で表示し、`chrome.alarms` で `…` 固着を検知するウォッチドッグ（MV3 SW のアイドル終了に耐える。issue #47）、(4) 音声解説タイルを主ワールドで実クリックする `chrome.scripting.executeScript({ world:'MAIN' })`（隔離ワールドの合成イベントは Angular Material タイルに効かないため。§8.7）。使用権限は `tabs` / `storage` / `alarms` / `scripting`（`manifest.config.ts`。用途は各行コメント参照。`storage` / `alarms` / `scripting` は F2-2、`tabs` は F2-1 用）。
 
 **セレクタは一箇所に集約。** NotebookLM の DOM セレクタはすべて `src/content/selectors.ts`（`SELECTORS` 定数）にある。NotebookLM の UI が変わったら、まずこのファイルを直す。セレクタは `docs/requirements.md` §8.5 に記録された実 DOM 調査に基づく。安定しているのは `mdc-*` / `mat-*`（Angular Material）。`ng-tns-*` / `_ngcontent-*`（動的生成）には**絶対に依存しない**。
 
