@@ -128,6 +128,30 @@ export function mountImportPanel(opts: {
           tabList.textContent = t('noTabs')
           return
         }
+
+        // 件数ヘッダー（選択 N / 全 M）＋ 全選択/全解除トグル
+        const header = document.createElement('div')
+        header.className = 'nlk-import-tab-header'
+        header.setAttribute('data-nlk', 'import-tab-header')
+        const countsSpan = document.createElement('span')
+        countsSpan.setAttribute('data-nlk', 'import-tab-counts')
+        const toggle = document.createElement('button')
+        toggle.type = 'button'
+        toggle.setAttribute('data-nlk', 'import-toggle-all')
+        header.append(countsSpan, toggle)
+
+        // スクロール領域（チェックボックス行）
+        const items = document.createElement('div')
+        items.className = 'nlk-import-tab-items'
+        items.setAttribute('data-nlk', 'import-tab-items')
+
+        const checks: HTMLInputElement[] = []
+        const updateHeader = () => {
+          const selected = checks.filter((c) => c.checked).length
+          countsSpan.textContent = t('tabSelectionCounts', { selected, total: checks.length })
+          toggle.textContent = selected === checks.length ? t('deselectAll') : t('selectAll')
+        }
+
         for (const tab of tabs) {
           const label = document.createElement('label')
           label.setAttribute('data-nlk', 'import-tab-item')
@@ -136,12 +160,23 @@ export function mountImportPanel(opts: {
           check.checked = true
           check.setAttribute('data-nlk', 'import-tab-check')
           check.dataset.url = tab.url
+          check.addEventListener('change', updateHeader)
           const text = document.createElement('span')
           text.textContent = tab.title || tab.url
           text.title = tab.url
           label.append(check, text)
-          tabList.appendChild(label)
+          items.appendChild(label)
+          checks.push(check)
         }
+
+        toggle.addEventListener('click', () => {
+          const allChecked = checks.every((c) => c.checked)
+          for (const c of checks) c.checked = !allChecked
+          updateHeader()
+        })
+
+        updateHeader()
+        tabList.append(header, items)
         addTabsBtn.hidden = false
       } catch {
         // background 不通など。パネルは壊さずメッセージだけ出す。

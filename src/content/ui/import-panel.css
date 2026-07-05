@@ -38,17 +38,42 @@
   resize: vertical;
 }
 .nlk-import-tab-list {
-  max-height: 160px;
-  overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-.nlk-import-tab-list label {
-  display: flex;
   gap: 6px;
+}
+.nlk-import-tab-header {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.nlk-import-tab-header button[data-nlk='import-toggle-all'] {
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 2px 8px;
+  color: inherit;
+  font: inherit;
+}
+.nlk-import-tab-items {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nlk-import-tab-items label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 2px;
   white-space: nowrap;
+  overflow: hidden;
+}
+.nlk-import-tab-items label span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
