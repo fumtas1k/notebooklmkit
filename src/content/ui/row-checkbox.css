@@ -14,3 +14,14 @@ input[data-nlk-checkbox] {
   height: 18px;
   display: block;
 }
+
+/* カード（グリッド）表示: box 内で3点メニューの左に配置。カード全体リンク
+   （a.primary-action-button）より前面に出すため stacking を確立する。 */
+.project-button-box > label[data-nlk="checkbox-hit"] {
+  margin: 0 4px 0 auto;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  position: relative;
+  z-index: 2;
+}

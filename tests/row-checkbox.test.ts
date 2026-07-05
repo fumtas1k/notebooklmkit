@@ -12,8 +12,53 @@ const LIST = `
     <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
 </tbody></table></project-table>`
 
+// カード（グリッド）表示の1枚（requirements §8.8）。moreButton あり=所有カード。
+const CARD = (title: string) => `
+<project-button class="project-button"><mat-card class="project-button-card">
+  <a class="primary-action-button" role="link"></a>
+  <div class="project-button-box">
+    <div class="project-button-box-icon">💻</div>
+    <project-action-button><button class="project-button-more" aria-label="プロジェクトの操作メニュー"></button></project-action-button>
+  </div>
+  <div><span class="project-button-title">${title}</span></div>
+</mat-card></project-button>`
+
 describe('injectRowCheckboxes', () => {
   beforeEach(() => { document.body.innerHTML = LIST })
+
+  it('injects a card checkbox just before the action button (left of the 3-dot)', () => {
+    document.body.innerHTML = `<div>${CARD('Gamma')}</div>`
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const box = document.querySelector('.project-button-box')!
+    const label = box.querySelector('label[data-nlk="checkbox-hit"]')!
+    // box の子順で label が project-action-button の直前にある。
+    const kids = [...box.children]
+    expect(kids.indexOf(label)).toBe(kids.findIndex((c) => c.tagName.toLowerCase() === 'project-action-button') - 1)
+    // 1 枚に 1 つだけ・冪等。
+    injectRowCheckboxes(store)
+    expect(box.querySelectorAll('[data-nlk-checkbox]').length).toBe(1)
+  })
+
+  it('does not inject into a card without a more button (recommended card)', () => {
+    document.body.innerHTML = `
+      <project-button class="project-button"><mat-card class="project-button-card">
+        <div class="project-button-box"><div class="project-button-box-icon">🌐</div></div>
+        <div><span class="project-button-title">Recommended</span></div>
+      </mat-card></project-button>`
+    injectRowCheckboxes(new SelectionStore())
+    expect(document.querySelector('[data-nlk-checkbox]')).toBeNull()
+  })
+
+  it('updates the store when a card checkbox is toggled', () => {
+    document.body.innerHTML = `<div>${CARD('Gamma')}</div>`
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const box = document.querySelector<HTMLInputElement>('[data-nlk-checkbox]')!
+    box.checked = true
+    box.dispatchEvent(new Event('change'))
+    expect(store.has('title:Gamma')).toBe(true)
+  })
 
   it('injects exactly one checkbox per row and is idempotent', () => {
     const store = new SelectionStore()
