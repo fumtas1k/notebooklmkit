@@ -245,7 +245,12 @@ export function initImport(root: ParentNode = document): () => void {
       }
       const result = await importUrls(urls, deps, {
         signal: ac.signal,
-        onProgress: (p) => panel.setProgress(t('importProgress', { done: p.completed, total: p.total })),
+        onProgress: (p) =>
+          panel.setProgress(
+            p.batch
+              ? t('importBatchProgress', { count: p.total })
+              : t('importProgress', { done: p.completed, total: p.total }),
+          ),
       })
       const rest = urls.length - result.succeeded.length - result.failed.length
       if (result.aborted) {
