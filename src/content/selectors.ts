@@ -85,7 +85,10 @@ export function getCheckboxHost(row: HTMLElement): CheckboxHost | null {
   const titleCell = getTitleCell(row) ?? row.querySelector<HTMLElement>('td')
   if (titleCell) return { host: titleCell, before: titleCell.firstChild }
   const box = row.querySelector<HTMLElement>(SELECTORS.cardCheckboxHost)
-  if (box) return { host: box, before: box.querySelector(SELECTORS.cardActionButton) }
+  // before は host（box）の直接子に限定する（insertBefore は before が host の直接子でないと
+  // NotFoundError を投げるため）。将来 action button がラップされたら before=null → box 末尾に
+  // append で graceful degradation（PR #73 レビュー・CLAUDE.md「掴んだノードの寿命/silent failure」方針）。
+  if (box) return { host: box, before: box.querySelector(`:scope > ${SELECTORS.cardActionButton}`) }
   return null
 }
 

@@ -149,6 +149,26 @@ describe('selectors (card / grid view)', () => {
     expect(placement.host.classList.contains('project-button-box')).toBe(true)
     expect((placement.before as HTMLElement).tagName.toLowerCase()).toBe('project-action-button')
   })
+
+  // insertBefore は before が host の直接子でないと NotFoundError を投げるため、
+  // 将来 NotebookLM が action button をラップしても子孫検索で拾わないことを確認する
+  // （PR #73 レビュー指摘）。graceful degradation として before は null（末尾 append）になる。
+  it('returns null before (not the wrapped action button) when the action button is not a direct child of the box', () => {
+    const root = document.createElement('div')
+    root.innerHTML = `
+      <project-button class="project-button"><mat-card class="project-button-card">
+        <div class="project-button-box">
+          <div class="wrap">
+            <project-action-button><button class="project-button-more"></button></project-action-button>
+          </div>
+        </div>
+        <div><span class="project-button-title">Wrapped</span></div>
+      </mat-card></project-button>`
+    const row = getNotebookRows(root)[0]
+    const placement = getCheckboxHost(row)!
+    expect(placement.host.classList.contains('project-button-box')).toBe(true)
+    expect(placement.before).toBeNull()
+  })
 })
 
 describe('getCheckboxHost (table view)', () => {
