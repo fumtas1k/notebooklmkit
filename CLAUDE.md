@@ -48,16 +48,24 @@ content script（`src/content/`）と background service worker（`src/backgroun
 
 ## 規約
 
-- **DI ＋純粋ロジックでテスト可能に。** 主要なロジックモジュール（deleter, selection, i18n, dom-utils）は `document` を直接触らない —— 協力オブジェクトを受け取るか、`root: ParentNode` 引数（既定は `document`）を取ることで、テストが jsdom フラグメントを渡せるようにしている。新しいロジックもこのパターンに従うこと。`src/content/*.ts` には対応する `tests/*.test.ts` がある。
+### テスト・実装パターン
+
+- **DI ＋純粋ロジックでテスト可能に。** 主要なロジックモジュール（deleter, selection, i18n, dom-utils, selectors, importer, notebook-creator, tabs-bridge, url-list 等）は `document` を直接触らない —— 協力オブジェクトを受け取るか、`root: ParentNode` 引数（既定は `document`）を取ることで、テストが jsdom フラグメントを渡せるようにしている。新しいロジックもこのパターンに従うこと。`src/content/*.ts` には対応する `tests/*.test.ts` がある。
 - **注入する DOM には `data-nlk` 属性を付ける**（例: `data-nlk="action-bar"`）。チェックボックスのホストセルは `CHECKBOX_ATTR` を使う。注入要素の検索 / 二重注入防止や、テストのフックに使う。
+- Linter / フォーマッタは未設定。静的チェックのゲートは `npm run typecheck`（strict モード。未使用のローカル変数 / 引数はエラー）。
+
+### DOM 自動化の gotcha（silent failure を疑う）
+
 - **「OR 追加だから悪化しない（strictly better）」は意味論の真部分集合を確認してから主張する。** 既存判定に新判定を OR で足す変更で「最悪でも現状同等」と言えるのは、新判定が true のとき既存判定も（いずれ）true になる＝**新 ⊆ 既存**が成り立つ場合だけ。片方が漏らす false positive 経路があると、抑止ガード等の用途で silent failure を招く。特に**要素テキストの可視性は非対称**: `document.body.innerText` は非表示テキスト（`display:none` 等）を除外するが、要素の `el.textContent` は**非表示も含む**。この非対称を見落とすと「新 ⊄ 既存」になる（issue #60 で音声解説の生成検知が該当。実例は `getAudioGenerationCard` / `docs/requirements.md` §8.7）。
 - **要素の可視性判定は jsdom で `offsetParent` / `checkVisibility()` を使わない**（jsdom では `offsetParent` が常に null になりテストで全要素が不可視扱いになる）。祖先を辿って `getComputedStyle` の `display === 'none'` / `visibility === 'hidden'` と `hidden` 属性を見る保守的判定にする（jsdom でもインラインスタイルに対して決定的に動く。実装例は `selectors.ts` の `isRenderedVisible`）。
-- **長寿命の `MutationObserver` は、置換され得るノードでなく生存する安定祖先に張る。** NotebookLM は再描画や表示モード切替（カード⇄一覧）で一覧コンテナ `.all-projects-container` を**新ノードに丸ごと置換**する。掴んだノード自体を `observe` すると、置換後は detached な旧ノードを監視し続けて発火せず、チェックボックス再注入が止まる silent failure になる（#67）。切替を生き延びる祖先（`welcome-page` → `.welcome-page-container` → `.app-body`。実装は `getListObserveTarget`）に多段フォールバックで張り、単一タグのリネームで即再発しないようにする。コンテナが一瞬 detach しても pathname 不変なら teardown しないルーターガード（#38）と合わせて、「掴んだノードの寿命」を常に疑うこと。
+- **長寿命の `MutationObserver` は、置換され得るノードでなく生存する安定祖先に張る。** NotebookLM は再描画や表示モード切替（カード⇄一覧）で一覧コンテナ `.all-projects-container` を**新ノードに丸ごと置換**する（実 DOM は `docs/requirements.md` §8.8）。掴んだノード自体を `observe` すると、置換後は detached な旧ノードを監視し続けて発火せず、チェックボックス再注入が止まる silent failure になる（#67）。切替を生き延びる祖先（`welcome-page` → `.welcome-page-container` → `.app-body`。実装は `getListObserveTarget`）に多段フォールバックで張り、単一タグのリネームで即再発しないようにする。コンテナが一瞬 detach しても pathname 不変なら teardown しないルーターガード（#38）と合わせて、「掴んだノードの寿命」を常に疑うこと。
+- **`host.insertBefore(node, before)` の `before` は host の直接子に限定する。** `before` が host の直接子でないと DOM 仕様上 `NotFoundError` を投げる。参照要素を子孫検索（`host.querySelector(sel)`）で求めると、将来 NotebookLM がその要素をラップしたとき子孫を拾って throw し、注入ループ（`injectRowCheckboxes`）全体が中断して**全行でチェックボックスが消え、observer 再発火で throw を繰り返す** silent failure になる。直接子のみに絞る（`host.querySelector(':scope > ' + sel)`）と、ラップ時は `before=null` → 末尾 append で graceful degradation する（#73 の `getCheckboxHost` カード分岐が該当。カード DOM は §8.8。「掴んだノードの寿命 / silent failure を疑う」方針の具体例）。
+- **jsdom で検証できない CSS / 配置 / スタッキング（z-index 等）は、実ページで経験的に検証する。** 単体テストは DOM 構造・イベント・ストア更新は固定できるが、レイアウトや `z-index`・`elementFromPoint` の重なりは jsdom では確認できない。拡張を再ビルド・再読込せずとも、**実 NotebookLM ページ（Claude in Chrome）に拡張と同一の注入ロジック＋CSS を適用**し、`getBoundingClientRect`（配置）・`elementFromPoint`（最前面がその要素か＝オーバーレイより前面か）・クリック後の `location.href` 不変（遷移しないか）を測ると確実かつ高速（#66 の E2E で有効。測定結果は §8.8）。視覚依存の変更は §8.x に測定結果を記録し、実機 E2E チェックリストにも観点を残す。
 - **実機調査で DOM 前提が変わったら `docs/requirements.md` §8.x を更新する。** セレクタのコメントや設計判断は調査記録の節を根拠に引用するため、古い節（例: §8.5 は 2026-07-01 のテーブル前提で、カード/テーブルの2表示モードや切替でのコンテナ置換を含まない）を根拠に新コメントを書くと traceability の齟齬が出る（#67 レビューで顕在化）。新事実は該当節に追記するか、無ければ設計ドキュメント（`docs/superpowers/specs/`）を参照先にする。
-- **`host.insertBefore(node, before)` の `before` は host の直接子に限定する。** `before` が host の直接子でないと DOM 仕様上 `NotFoundError` を投げる。参照要素を子孫検索（`host.querySelector(sel)`）で求めると、将来 NotebookLM がその要素をラップしたとき子孫を拾って throw し、注入ループ（`injectRowCheckboxes`）全体が中断して**全行でチェックボックスが消え、observer 再発火で throw を繰り返す** silent failure になる。直接子のみに絞る（`host.querySelector(':scope > ' + sel)`）と、ラップ時は `before=null` → 末尾 append で graceful degradation する（#73 の `getCheckboxHost` カード分岐が該当。「掴んだノードの寿命 / silent failure を疑う」方針の具体例）。
-- **jsdom で検証できない CSS / 配置 / スタッキング（z-index 等）は、実ページで経験的に検証する。** 単体テストは DOM 構造・イベント・ストア更新は固定できるが、レイアウトや `z-index`・`elementFromPoint` の重なりは jsdom では確認できない。拡張を再ビルド・再読込せずとも、**実 NotebookLM ページ（Claude in Chrome）に拡張と同一の注入ロジック＋CSS を適用**し、`getBoundingClientRect`（配置）・`elementFromPoint`（最前面がその要素か＝オーバーレイより前面か）・クリック後の `location.href` 不変（遷移しないか）を測ると確実かつ高速（#66 の E2E で有効）。視覚依存の変更は §8.x に測定結果を記録し、実機 E2E チェックリストにも観点を残す。
+
+### 配布制約
+
 - **ストア公開を見据えた制約**（`docs/requirements.md` §3.3）: 権限最小化（`host_permissions: notebooklm.google.com` のみ ——`manifest.config.ts` 参照）、外部ネットワーク送信ゼロ / トラッカー無し、日英 i18n。これらは維持すること。
-- Linter / フォーマッタは未設定。静的チェックのゲートは `npm run typecheck`（strict モード。未使用のローカル変数 / 引数はエラー）。
 
 ## Issue 作成
 
