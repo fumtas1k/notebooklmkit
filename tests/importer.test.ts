@@ -148,4 +148,44 @@ describe('importUrls', () => {
     expect(res.succeeded).toEqual([])
     expect(res.failed).toEqual([])
   })
+
+  // 回帰テスト: バッチ化導入前からあった「単一 URL の逐次パス」「フォールバックの逐次ループ」
+  // の安全停止・境界中断の意味論は、バッチ化後も残っている（importOne 自体は変わっていない）。
+  it('single-url path records a failure and stops when the dialog never closes', async () => {
+    const { deps } = makeWorld()
+    const realClick = deps.click
+    deps.click = (e) => {
+      if (e.dataset.name === 'submit') return // 挿入しても閉じない（想定外 DOM）
+      realClick(e)
+    }
+    const res = await importUrls(['https://a.example/'], deps)
+    // 単一 URL はバッチを経ず逐次パスを通る: 失敗を1件記録して停止
+    expect(res.succeeded).toEqual([])
+    expect(res.failed.map((f) => f.url)).toEqual(['https://a.example/'])
+    expect(res.aborted).toBe(false)
+  })
+
+  it('fallback loop completes the in-flight url then aborts at the next boundary', async () => {
+    const { deps, added } = makeWorld()
+    // 複数行入力だと挿入ボタンが有効化しない世界＝バッチはコミット前失敗→逐次フォールバック
+    const realSubmit = deps.getSubmitButton
+    deps.getSubmitButton = (d) => {
+      const b = realSubmit(d) as HTMLButtonElement | null
+      const inp = d.querySelector('textarea')
+      if (b && inp && inp.value.includes('\n')) b.disabled = true
+      return b
+    }
+    const ac = new AbortController()
+    const realClick = deps.click
+    deps.click = (e) => {
+      realClick(e)
+      if (e.dataset.name === 'submit') ac.abort() // 各コミット直後に中断
+    }
+    const res = await importUrls(URLS, deps, { signal: ac.signal })
+    // バッチ④で submit が無効のままタイムアウト（コミット前・submit未クリック）→ フォールバック。
+    // フォールバック1件目は改行なしで submit 有効→成功→直後に abort。2件目は URL 境界で未処理。
+    expect(res.aborted).toBe(true)
+    expect(res.succeeded).toEqual([URLS[0]])
+    expect(added).toEqual([URLS[0]])
+  })
 })

@@ -135,6 +135,7 @@ export function mountImportPanel(opts: {
         header.setAttribute('data-nlk', 'import-tab-header')
         const countsSpan = document.createElement('span')
         countsSpan.setAttribute('data-nlk', 'import-tab-counts')
+        countsSpan.setAttribute('aria-live', 'polite')
         const toggle = document.createElement('button')
         toggle.type = 'button'
         toggle.setAttribute('data-nlk', 'import-toggle-all')
