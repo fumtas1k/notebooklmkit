@@ -14,8 +14,9 @@ export function mountActionBar(opts: {
   t: ReturnType<typeof createT>
   handlers: ActionBarHandlers
   root?: HTMLElement
+  count?: () => number
 }) {
-  const { store, t, handlers, root = document.body } = opts
+  const { store, t, handlers, root = document.body, count: countFn } = opts
 
   const bar = document.createElement('div')
   bar.className = 'nlk-action-bar'
@@ -45,19 +46,22 @@ export function mountActionBar(opts: {
   root.insertBefore(bar, root.firstChild)
 
   let busy = false
-  const render = (size: number) => {
+  const currentCount = () => countFn?.() ?? store.size
+  const render = () => {
+    const size = currentCount()
     count.textContent = t('selectedCount', { count: size })
     del.textContent = t('deleteSelected', { count: size })
     del.disabled = busy || size === 0
     del.hidden = busy
     stop.hidden = !busy
   }
-  const unsub = store.onChange(render)
-  render(store.size)
+  const unsub = store.onChange(() => render())
+  render()
 
   return {
     setProgress(text: string | null) { progress.textContent = text ?? '' },
-    setBusy(b: boolean) { busy = b; render(store.size) },
+    setBusy(b: boolean) { busy = b; render() },
+    refresh() { render() },
     destroy() { unsub(); bar.remove() },
   }
 }
