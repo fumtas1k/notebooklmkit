@@ -76,6 +76,7 @@ export function init(root: ParentNode = document): () => void {
   const bar = mountActionBar({
     store,
     t,
+    count: () => buildTargets(store, root).length,
     handlers: {
       onSelectAll: () => {
         // 削除不可行（moreButton 無し = おすすめ/Reader 行）は選択に含めない（issue #23）。
@@ -99,7 +100,10 @@ export function init(root: ParentNode = document): () => void {
   // いずれの安定祖先候補も切替を生き延びる（実機確認済み）。多段フォールバックに
   // より、いずれか単体がリネームされてもすぐには再発しない。どの候補も無い環境
   // （テスト等）は .all-projects-container → body/root にフォールバックする。
-  const observer = new MutationObserver(() => injectRowCheckboxes(store, root))
+  const observer = new MutationObserver(() => {
+    injectRowCheckboxes(store, root)
+    bar.refresh()
+  })
   // container 名は削除完了後 finally の再接続 observer.observe(container, …) が参照するため維持する。
   const container =
     getListObserveTarget(root) ??
