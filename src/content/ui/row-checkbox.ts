@@ -1,4 +1,4 @@
-import { getNotebookRows, getRowIdentity, getTitleCell, getRowKey, isDeletableRow } from '../selectors'
+import { getNotebookRows, getRowIdentity, getCheckboxHost, getRowKey, isDeletableRow } from '../selectors'
 import { makeTarget } from '../../types'
 import type { SelectionStore } from '../selection'
 import './row-checkbox.css'
@@ -41,9 +41,9 @@ export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = do
       existing.checked = store.has(target.key)
       continue
     }
-    // 新しい <td> を足すと列数がヘッダー行とズレるため、既存のタイトルセル内に入れる。
-    const host = getTitleCell(row) ?? row.querySelector('td')
-    if (!host) continue
+    // 注入ホストと挿入位置はモード別（テーブル=タイトルセル先頭 / カード=3点メニューの左）。
+    const placement = getCheckboxHost(row)
+    if (!placement) continue
 
     // スタイルは row-checkbox.css（co-located）で data 属性セレクタに対して当てる。
     const label = document.createElement('label')
@@ -61,6 +61,6 @@ export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = do
     )
 
     label.appendChild(box)
-    host.insertBefore(label, host.firstChild)
+    placement.host.insertBefore(label, placement.before)
   }
 }

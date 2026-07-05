@@ -17,6 +17,17 @@ const LIST = `
     <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
 </tbody></table></project-table></div>`
 
+const CARD_LIST = `
+<welcome-page><div class="all-projects-container"><div class="my-projects-container">
+  <project-button class="project-button"><mat-card class="project-button-card">
+    <div class="project-button-box">
+      <div class="project-button-box-icon">💻</div>
+      <project-action-button><button class="project-button-more"></button></project-action-button>
+    </div>
+    <div><span class="project-button-title">Gamma</span></div>
+  </mat-card></project-button>
+</div></div></welcome-page>`
+
 describe('buildTargets', () => {
   beforeEach(() => { document.body.innerHTML = LIST })
   it('returns targets for currently selected keys only', () => {
@@ -128,6 +139,14 @@ describe('init', () => {
     init()
     expect(document.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(2)
     expect(document.querySelector('[data-nlk="action-bar"]')).not.toBeNull()
+  })
+
+  it('injects a checkbox in card (grid) view too', () => {
+    document.body.innerHTML = CARD_LIST
+    const dispose = init()
+    expect(document.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(1)
+    expect(document.querySelector('.project-button-box [data-nlk-checkbox]')).not.toBeNull()
+    dispose()
   })
 })
 
