@@ -5,6 +5,12 @@ export const SELECTORS = {
   row: 'project-table table.project-table tbody tr[mat-row][role="row"]',
   title: 'span.project-table-title',
   titleCell: 'td.title-column',
+  // ---- カード（グリッド）表示。2026-07-05 実機調査済み（requirements.md §8.8）。----
+  // ページは常に一方のモード（カード=project-button のみ / 一覧=project-table のみ）。
+  cardRow: 'project-button.project-button',
+  cardTitle: 'span.project-button-title',
+  cardCheckboxHost: 'div.project-button-box',
+  cardActionButton: 'project-action-button',
   moreButton: 'project-action-button button.project-button-more',
   deleteMenuItem: '.cdk-overlay-container button.mat-mdc-menu-item.delete-button',
   confirmDialog: 'mat-dialog-container',
@@ -30,11 +36,13 @@ export const SELECTORS = {
 const LIST_ROOT_SELECTORS = [SELECTORS.listRoot, '.welcome-page-container', '.app-body'] as const
 
 export function getNotebookRows(root: ParentNode = document): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(SELECTORS.row))
+  // テーブル行とカードの和集合（ページは常に一方のモードなので片方は空）。
+  return Array.from(root.querySelectorAll<HTMLElement>(`${SELECTORS.row}, ${SELECTORS.cardRow}`))
 }
 
 export function getRowIdentity(row: HTMLElement): RowIdentity {
-  const title = row.querySelector(SELECTORS.title)?.textContent?.trim() ?? ''
+  const titleEl = row.querySelector(SELECTORS.title) ?? row.querySelector(SELECTORS.cardTitle)
+  const title = titleEl?.textContent?.trim() ?? ''
   return { title }
 }
 
@@ -63,6 +71,22 @@ export function isDeletableRow(row: HTMLElement): boolean {
 // ヘッダー行とズレるため、既存のタイトルセル内に注入する。
 export function getTitleCell(row: HTMLElement): HTMLElement | null {
   return row.querySelector<HTMLElement>(SELECTORS.titleCell)
+}
+
+// チェックボックスの注入ホストと挿入位置（before）。モード別に返す。
+export interface CheckboxHost {
+  host: HTMLElement
+  before: Node | null
+}
+
+// テーブル行はタイトルセル先頭（新しい列を足すとヘッダーとズレるため）、
+// カード行は box 内・3点メニュー（project-action-button）の直前（＝左）に注入する。
+export function getCheckboxHost(row: HTMLElement): CheckboxHost | null {
+  const titleCell = getTitleCell(row) ?? row.querySelector<HTMLElement>('td')
+  if (titleCell) return { host: titleCell, before: titleCell.firstChild }
+  const box = row.querySelector<HTMLElement>(SELECTORS.cardCheckboxHost)
+  if (box) return { host: box, before: box.querySelector(SELECTORS.cardActionButton) }
+  return null
 }
 
 // 再スキャン observer を張る安定祖先（表示モード切替で置換される .all-projects-container の

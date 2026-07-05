@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   getNotebookRows, getRowIdentity, findRowByIdentity,
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
-  getListObserveTarget,
+  getListObserveTarget, getCheckboxHost, isDeletableRow,
 } from '../src/content/selectors'
 
 const LIST_HTML = `
@@ -102,5 +102,68 @@ describe('getListObserveTarget', () => {
     const root = document.createElement('div')
     root.innerHTML = '<div class="all-projects-container"></div>'
     expect(getListObserveTarget(root)).toBeNull()
+  })
+})
+
+// カード（グリッド）表示の DOM（requirements §8.8）。1枚目=所有カード（moreButton あり）、
+// 2枚目=おすすめカード（moreButton 無し・project-action-button 無し）。
+const CARD_HTML = `
+<div class="all-projects-container"><div class="my-projects-container">
+  <project-button class="project-button"><mat-card class="project-button-card">
+    <a class="primary-action-button" role="link"></a>
+    <div class="project-button-box">
+      <div class="project-button-box-icon">💻</div>
+      <project-action-button><button class="project-button-more" aria-label="プロジェクトの操作メニュー"></button></project-action-button>
+    </div>
+    <div><span class="project-button-title">Gamma</span></div>
+    <div class="project-button-subtitle"><span>出典: 1 件</span></div>
+  </mat-card></project-button>
+  <project-button class="project-button"><mat-card class="project-button-card">
+    <a class="primary-action-button" role="link"></a>
+    <div class="project-button-box"><div class="project-button-box-icon">🌐</div></div>
+    <div><span class="project-button-title">Recommended</span></div>
+  </mat-card></project-button>
+</div></div>`
+
+describe('selectors (card / grid view)', () => {
+  beforeEach(() => { document.body.innerHTML = CARD_HTML })
+
+  it('lists project-button cards as notebook rows', () => {
+    expect(getNotebookRows().length).toBe(2)
+  })
+
+  it('reads identity from the card title span', () => {
+    const first = getNotebookRows()[0]
+    expect(getRowIdentity(first).title).toBe('Gamma')
+  })
+
+  it('treats a card with a more button as deletable and one without as non-deletable', () => {
+    const [owned, recommended] = getNotebookRows()
+    expect(isDeletableRow(owned)).toBe(true)
+    expect(isDeletableRow(recommended)).toBe(false)
+  })
+
+  it('returns the box as host and the action button as insert-before for a card', () => {
+    const owned = getNotebookRows()[0]
+    const placement = getCheckboxHost(owned)!
+    expect(placement.host.classList.contains('project-button-box')).toBe(true)
+    expect((placement.before as HTMLElement).tagName.toLowerCase()).toBe('project-action-button')
+  })
+})
+
+describe('getCheckboxHost (table view)', () => {
+  beforeEach(() => { document.body.innerHTML = LIST_HTML })
+
+  it('returns the title cell as host and its first child as insert-before', () => {
+    const row = getNotebookRows()[0]
+    const placement = getCheckboxHost(row)!
+    expect(placement.host.classList.contains('title-column')).toBe(true)
+    // 先頭に挿入するため before は title セルの現在の先頭ノード（emoji span 等）。
+    expect(placement.before).toBe(placement.host.firstChild)
+  })
+
+  it('returns null when the row has neither a title cell/td nor a card box', () => {
+    const bare = document.createElement('div')
+    expect(getCheckboxHost(bare)).toBeNull()
   })
 })
