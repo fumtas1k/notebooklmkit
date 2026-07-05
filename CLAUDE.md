@@ -52,7 +52,7 @@ content script（`src/content/`）と background service worker（`src/backgroun
 
 - **DI ＋純粋ロジックでテスト可能に。** 主要なロジックモジュール（deleter, selection, i18n, dom-utils, selectors, importer, notebook-creator, tabs-bridge, url-list 等）は `document` を直接触らない —— 協力オブジェクトを受け取るか、`root: ParentNode` 引数（既定は `document`）を取ることで、テストが jsdom フラグメントを渡せるようにしている。新しいロジックもこのパターンに従うこと。`src/content/*.ts` には対応する `tests/*.test.ts` がある。
 - **注入する DOM には `data-nlk` 属性を付ける**（例: `data-nlk="action-bar"`）。チェックボックスのホストセルは `CHECKBOX_ATTR` を使う。注入要素の検索 / 二重注入防止や、テストのフックに使う。
-- **jsdom（実ブラウザ仕様どおり）の `<input>.value` は代入時に改行を除去する。** 複数行テキスト（改行区切りの複数 URL 等）を扱うテストのフェイク入力欄は `<input>` ではなく `<textarea>` を使う（`<input>` だと `\n` が消えて複数行の投入・分割を再現できず、テストが実挙動と乖離したまま緑になる）。実機のソース追加欄も `textarea[formcontrolname="urls"]`（§8.6）なので `<textarea>` が忠実（importer のバッチ投入テストで顕在化。PR #76）。
+- **jsdom（実ブラウザ仕様どおり）の `<input>.value` は代入時に改行を除去する。** 複数行テキスト（改行区切りの複数 URL 等）を扱うテストのフェイク入力欄は `<input>` ではなく `<textarea>` を使う（`<input>` だと `\n` が消えて複数行の投入・分割を再現できず、テストが実挙動と乖離したまま緑になる）。実機のソース追加欄も `textarea[formcontrolname="urls"]`（§8.6）なので `<textarea>` が忠実（importer のバッチ投入テストで顕在化。#76）。
 - Linter / フォーマッタは未設定。静的チェックのゲートは `npm run typecheck`（strict モード。未使用のローカル変数 / 引数はエラー）。
 
 ### DOM 自動化の gotcha（silent failure を疑う）
