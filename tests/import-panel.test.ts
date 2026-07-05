@@ -92,6 +92,61 @@ describe('mountImportPanel', () => {
     expect(q<HTMLTextAreaElement>('import-urls')!.value).not.toContain('https://b.example/')
   })
 
+  it('shows selection counts and a toggle that clears/selects all tabs', async () => {
+    mount({}, [
+      { title: 'A', url: 'https://a.example/' },
+      { title: 'B', url: 'https://b.example/' },
+      { title: 'C', url: 'https://c.example/' },
+    ])
+    q('import-load-tabs')!.click()
+    await flush()
+
+    const counts = q('import-tab-counts')!
+    const toggle = q<HTMLButtonElement>('import-toggle-all')!
+    expect(counts.textContent).toBe('Selected 3 / 3')
+    expect(toggle.textContent).toBe('Clear all') // 全選択時は「すべて解除」
+
+    toggle.click() // すべて解除
+    const boxes = () => document.querySelectorAll<HTMLInputElement>('[data-nlk="import-tab-check"]')
+    expect(Array.from(boxes()).every((c) => !c.checked)).toBe(true)
+    expect(counts.textContent).toBe('Selected 0 / 3')
+    expect(toggle.textContent).toBe('Select all') // 全解除時は「すべて選択」
+
+    toggle.click() // すべて選択
+    expect(Array.from(boxes()).every((c) => c.checked)).toBe(true)
+    expect(counts.textContent).toBe('Selected 3 / 3')
+    expect(toggle.textContent).toBe('Clear all')
+  })
+
+  it('updates counts and toggle label when a single tab is unchecked', async () => {
+    mount({}, [
+      { title: 'A', url: 'https://a.example/' },
+      { title: 'B', url: 'https://b.example/' },
+    ])
+    q('import-load-tabs')!.click()
+    await flush()
+
+    const box = document.querySelector<HTMLInputElement>('[data-nlk="import-tab-check"]')!
+    box.checked = false
+    box.dispatchEvent(new Event('change', { bubbles: true }))
+
+    expect(q('import-tab-counts')!.textContent).toBe('Selected 1 / 2')
+    expect(q<HTMLButtonElement>('import-toggle-all')!.textContent).toBe('Select all')
+  })
+
+  it('resets to all-selected when tabs are reloaded', async () => {
+    const { handlers } = mount({}, [{ title: 'A', url: 'https://a.example/' }])
+    q('import-load-tabs')!.click()
+    await flush()
+    q<HTMLButtonElement>('import-toggle-all')!.click() // 一旦すべて解除
+    expect(q('import-tab-counts')!.textContent).toBe('Selected 0 / 1')
+    q('import-load-tabs')!.click() // 再読込
+    await flush()
+    expect(handlers.onLoadTabs).toHaveBeenCalledTimes(2)
+    expect(q('import-tab-counts')!.textContent).toBe('Selected 1 / 1') // 全選択に戻る
+    expect(q<HTMLButtonElement>('import-toggle-all')!.textContent).toBe('Clear all')
+  })
+
   it('shows a message when there are no importable tabs', async () => {
     mount({}, [])
     q('import-load-tabs')!.click()

@@ -31,6 +31,8 @@ export interface ImportProgress {
   completed: number
   failed: number
   currentUrl?: string
+  // バッチ（全件1回投入）試行中の進捗イベントで true。UI は「N件を一括追加中」を表示する。
+  batch?: boolean
 }
 
 export interface ImportResult {

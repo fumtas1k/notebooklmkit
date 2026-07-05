@@ -36,4 +36,9 @@ describe('i18n', () => {
     expect(ja('urlCounts', { valid: 2, invalid: 1 })).toContain('2')
     expect(en('importFailedSummary', { ok: 1, ng: 1, rest: 2 })).toContain('2')
   })
+
+  it('formats the batch import progress in both languages', () => {
+    expect(createT('en')('importBatchProgress', { count: 5 })).toBe('Adding 5 URLs at once…')
+    expect(createT('ja')('importBatchProgress', { count: 5 })).toBe('5 件を一括追加中…')
+  })
 })
