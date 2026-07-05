@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Google NotebookLM のコンシューマ版（`https://notebooklm.google.com/`）に機能を追加する Manifest V3 の Chrome 拡張機能。NotebookLM には**公開 API が存在しない**ため、すべて **content script からの DOM 自動化**（NotebookLM 自身の UI フローを疑似クリックで操作）で実現している。RPC / `batchexecute` 直接呼び出しは明確にスコープ外（`docs/requirements.md` §3 参照）。
 
-Phase 1（実装済み）: ノートブック一覧の複数選択＋一括削除。Phase 2（実装済み: F2-1 / F2-3。F2-2 は未実装）: タブ / URL の一括インポート。全体のフェーズ計画は `docs/requirements.md` を参照。
+Phase 1（実装済み）: ノートブック一覧の複数選択＋一括削除。Phase 2（実装済み: F2-1 / F2-2 / F2-3）: F2-1/F2-3 はタブ / URL の一括インポート、F2-2 はツールバーアイコンから現在ページ（または選択タブ）を**新規ノートブックとして作成**（既存への追記ではない）＋作成後に音声解説の生成を自動押下。全体のフェーズ計画は `docs/requirements.md` を参照。
 
 ドキュメント・コードは日英バイリンガル。要件 / 設計ドキュメントとコードコメントは日本語。
 
@@ -26,7 +26,7 @@ npx vitest run -t "aborts"             # 名前指定で単一テスト
 
 ## アーキテクチャ
 
-content script（`src/content/`）と、タブ列挙のみを行う最小の background service worker（`src/background/main.ts`）で構成される（popup はまだ無い）。壊れやすい部分とテスト可能なロジックを意図的に分離する設計。
+content script（`src/content/`）と background service worker（`src/background/main.ts`）で構成される（popup はまだ無い）。壊れやすい部分とテスト可能なロジックを意図的に分離する設計。background は当初「タブ列挙のみ」だったが、F2-2 で役割が増えた: (1) 同一ウィンドウのタブ URL 列挙（`nlk:list-tabs`）、(2) ツールバーアイコン `chrome.action.onClicked` を起点に新規作成タブを開き `pendingCreate` を storage 保存、(3) 作成の進捗をタブ別バッジ（`…`/`✓`/`!`）で表示し、`chrome.alarms` で `…` 固着を検知するウォッチドッグ（MV3 SW のアイドル終了に耐える。issue #47）、(4) 音声解説タイルを主ワールドで実クリックする `chrome.scripting.executeScript({ world:'MAIN' })`（隔離ワールドの合成イベントは Angular Material タイルに効かないため。§8.7）。使用権限は `tabs` / `storage` / `alarms` / `scripting`（`manifest.config.ts`。用途は各行コメント参照。いずれも F2-2 のため）。
 
 **セレクタは一箇所に集約。** NotebookLM の DOM セレクタはすべて `src/content/selectors.ts`（`SELECTORS` 定数）にある。NotebookLM の UI が変わったら、まずこのファイルを直す。セレクタは `docs/requirements.md` §8.5 に記録された実 DOM 調査に基づく。安定しているのは `mdc-*` / `mat-*`（Angular Material）。`ng-tns-*` / `_ngcontent-*`（動的生成）には**絶対に依存しない**。
 
@@ -38,21 +38,13 @@ content script（`src/content/`）と、タブ列挙のみを行う最小の bac
 - 完了判定は、掴んだ行ノードが DOM から外れること（`row.isConnected`）で行う。タイトルで再検索すると同名の別行を拾い続けるため使わない。
 - 失敗 / タイムアウト時は**停止**（安全側）し、失敗を記録する。中断はアイテム境界でのみ判定 —— 処理中の1件は必ず完了させる。
 
-**Phase 2（インポート）は Phase 1 と同じ分離を踏襲。** `src/content/importer.ts`
-（`importUrls`）は `ImporterDeps` を受け取る DI 構成で、1 URL ずつ
-「ソース追加 → ウェブサイト → URL 入力 → 挿入 → ダイアログ消滅待ち」を逐次実行する。
-失敗で安全停止という deleter と同じ規約。**ソース追加フローのセレクタは
-2026-07-03 実機調査済み**（`docs/requirements.md` §8.6）。テキスト / aria-label マッチング
-（`SOURCE_TEXT`）を主軸に、候補集合を安定クラス（`drop-zone-icon-button` 等）で絞る方針。
-中断は挿入クリック前なら要素待ちレベルで即時に効き、挿入後はその1件の完了を待って URL 境界で停止する。
-実機確認は `docs/e2e-checklist-phase2.md` §0 に従う。`main.ts` の `start()` は pathname で
-一覧ページ（Phase 1 UI）とノートブックページ（インポートパネル）を出し分ける常駐ルーター。
-タブ一括インポート（F2-1）は content → background の `nlk:list-tabs` メッセージで
-同一ウィンドウのタブ URL を取得する（`permissions: ['tabs']` はこのためだけに使用）。
+**Phase 2（インポート）は Phase 1 と同じ分離を踏襲。** `src/content/importer.ts`（`importUrls`）は `ImporterDeps` を受け取る DI 構成で、1 URL ずつ「ソース追加 → ウェブサイト → URL 入力 → 挿入 → ダイアログ消滅待ち」を逐次実行する。失敗で安全停止という deleter と同じ規約。**ソース追加フローのセレクタは 2026-07-03 実機調査済み**（`docs/requirements.md` §8.6）。テキスト / aria-label マッチング（`SOURCE_TEXT`）を主軸に、候補集合を安定クラス（`drop-zone-icon-button` 等）で絞る方針。中断は挿入クリック前なら要素待ちレベルで即時に効き、挿入後はその1件の完了を待って URL 境界で停止する。実機確認は `docs/e2e-checklist-phase2.md` §0 に従う。`main.ts` の `start()` は pathname で一覧ページ（Phase 1 UI）とノートブックページ（インポートパネル）を出し分ける常駐ルーター。タブ一括インポート（F2-1）は content → background の `nlk:list-tabs` メッセージで同一ウィンドウのタブ URL を取得する（`tabs` 権限はこのためだけに使用）。
+
+**F2-2（現在ページから新規ノートブック作成）も同じ DI 分離。** `src/content/notebook-creator.ts` は `createNotebookWithUrls`（「新規作成 → ウェブサイト → URL 入力 → 挿入 → ダイアログ消滅待ち」を importer 同様の DI で実行）と `triggerAudioOverview`（作成成功時に音声解説の生成タイルを fire-and-forget で押下。生成開始検知＝再試行停止＆二重生成防止は「表示テキスト一致 OR 生成カード要素の出現」の OR。§8.7 / issue #60）を提供する。ツールバー起点の配線は background（上記）＋ `main.ts` の `handlePendingCreate`（storage の `pendingCreate` を TTL 内なら1度だけ実行し結果を background に返す。実機フローは §8.7 / issue #51）。
 
 **配線は `main.ts`。** `start()` は `.all-projects-container` の出現を待つ（NotebookLM はクライアントレンダリングの Angular SPA で、script 評価時点ではコンテナが無いことが多い）。その後 `init()` が SelectionStore を用意し、行チェックボックスを注入し、アクションバーをマウントし、再描画時にチェックボックスを再注入する `MutationObserver` を設定する。**削除実行中は observer を切断する**（拡張自身が一覧を大量に書き換えるため）。`finally` で再接続する。`main.ts` 末尾では `location.hostname === 'notebooklm.google.com'` のときだけ自動起動するので、テスト（jsdom）でモジュールを import しても副作用は無い。
 
-**その他のモジュール:** `selection.ts`（監視可能な `SelectionStore`。中身は Set）、`dom-utils.ts`（タイムアウト＋中断つきポーリングの `waitFor`、`safeClick`、`TimeoutError` / `AbortError`）、`i18n.ts`（`{placeholder}` テンプレート方式。`navigator.language` で JA / EN）、`confirm-dialog.ts` ＋ `ui/`（チェックボックス注入、アクションバー、大量 / 全選択削除時の件数タイプ確認）。
+**その他のモジュール:** `selection.ts`（監視可能な `SelectionStore`。中身は Set）、`dom-utils.ts`（タイムアウト＋中断つきポーリングの `waitFor`、`safeClick`、`setInputValue`、`TimeoutError` / `AbortError`）、`i18n.ts`（`{placeholder}` テンプレート方式。`navigator.language` で JA / EN）、`confirm-dialog.ts` ＋ `ui/`（チェックボックス注入、アクションバー、インポートパネル、大量 / 全選択削除時の件数タイプ確認）、`tabs-bridge.ts`（content → background の `nlk:list-tabs` で同一ウィンドウのタブ URL を取得。F2-1）、`url-list.ts`（貼り付けテキストから URL を抽出・正規化。F2-3）。`notebook-creator.ts` は上記 F2-2 段落を参照。
 
 ## 規約
 
