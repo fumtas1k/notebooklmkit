@@ -197,6 +197,61 @@ describe('confirm click settling and retry', () => {
     expect(container.children.length).toBe(2)
   })
 
+  // codex P1: タイムアウト = 拒否ではない。判定後〜再検索の間に削除が遅れて成立すると、
+  // タイトル引きは同名の別行を掴み、選択していないノートブックを消し得る（TOCTOU）。
+  it('resolves the row only once and never re-resolves it by title on retry', async () => {
+    const { deps } = makeWorld(['X', 'X'])
+    let findRowCalls = 0
+    const realFind = deps.findRow
+    deps.findRow = (t) => { findRowCalls++; return realFind(t) }
+    let menuOpen = false, dialogOpen = false, confirmClicks = 0
+    deps.click = (e) => {
+      const name = e.dataset.name
+      if (name === 'more') menuOpen = true
+      else if (name === 'delete') { dialogOpen = true; menuOpen = false }
+      else if (name === 'confirm') { confirmClicks++; dialogOpen = false } // 行は消えない
+    }
+    deps.getDeleteMenuItem = () => (menuOpen ? named('delete') : null)
+    deps.getConfirmDialog = () => (dialogOpen ? named('dialog') : null)
+    deps.getConfirmDeleteButton = () => named('confirm')
+    deps.maxAttempts = 3
+
+    await deleteNotebooks(targets('X'), deps, {})
+    expect(confirmClicks).toBe(3)   // 再試行はする
+    expect(findRowCalls).toBe(1)    // が、行の引き直しは一度きり
+  })
+
+  // 遅延が timeout を超えれば「もう一度押す」こと自体は避けられない（無限には待てない）。
+  // 守るべき不変条件は、再試行が **掴んだ行だけ** に向き、同名の兄弟に波及しないこと。
+  it('never touches a same-titled sibling when the deletion lands late during retry', async () => {
+    const { deps, container } = makeWorld(['X', 'X'])
+    const first = container.children[0] as HTMLElement
+    const second = container.children[1] as HTMLElement
+    let menuOpen = false, dialogOpen = false, confirmClicks = 0
+    deps.click = (e) => {
+      const name = e.dataset.name
+      if (name === 'more') menuOpen = true
+      else if (name === 'delete') { dialogOpen = true; menuOpen = false }
+      else if (name === 'confirm') {
+        confirmClicks++
+        dialogOpen = false
+        // 「1回目のクリックは効いていたが反映が遅れた」= 消滅待ちがタイムアウトした後に消える
+        if (confirmClicks === 1) setTimeout(() => first.remove(), 250)
+      }
+    }
+    deps.getDeleteMenuItem = () => (menuOpen ? named('delete') : null)
+    deps.getConfirmDialog = () => (dialogOpen ? named('dialog') : null)
+    deps.getConfirmDeleteButton = () => named('confirm')
+
+    const res = await deleteNotebooks(targets('X'), deps, {})
+    // 遅れて成立した削除は完了として扱われる
+    expect(res.succeeded).toEqual(['title:X'])
+    expect(first.isConnected).toBe(false)
+    // 同名の兄弟は無傷（旧実装は findRow の引き直しでこれを消し得た）
+    expect(second.isConnected).toBe(true)
+    expect(container.children.length).toBe(1)
+  })
+
   it('never re-clicks confirm once the row is gone (no double deletion)', async () => {
     const { deps } = makeWorld(['A'])
     let confirmClicks = 0

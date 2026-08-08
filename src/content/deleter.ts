@@ -34,10 +34,17 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
   const w = deps.waitFor
   const sleep = deps.delay ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
 
+  // ① 対象行を確定する。**ループの外で一度だけ**引く。
+  // 再試行のたびにタイトルで引き直すと、1回目の削除が遅れて成立した隙に
+  // 同名の別行を掴み、選択していないノートブックを消し得る（TOCTOU / #82 codex P1）。
+  // タイトルは一意でない（types.ts）以上、掴んだノードだけを操作し続けるしかない。
+  const row = await w(() => deps.findRow(target), { timeout })
+
   let lastError: Error | null = null
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // ① 対象行を（再描画後も）確定
-    const row = await w(() => deps.findRow(target), { timeout })
+    // 前の試行が遅れて成立していれば完了。二度押ししない。
+    // 「タイムアウト = 拒否」ではないため、各試行の入口で必ず確認する。
+    if (!row.isConnected) return
     // ② 操作メニューを開く
     const more = deps.getMoreButton(row)
     if (!more) throw new Error('more button not found')
@@ -63,11 +70,11 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
       return
     } catch (err) {
       lastError = err as Error
-      // 行が消えているのに待機が失敗した場合は、状況が読めないので再試行しない
-      // （成功済みかもしれないものを押し直すと、同名の別行を巻き込み得る）。
-      if (!row.isConnected) throw lastError
-      // ここに来る = ④' の待機でも足りず「閉じただけ」だった。行が残っている
-      // ＝ 未削除が確定しているので、フローごとやり直しても二重削除にならない。
+      // 消滅待ちはタイムアウトしたが、その後に反映が届いていれば削除は成立している。
+      // 「タイムアウト = 拒否」と決めつけない（#82 codex P1）。
+      if (!row.isConnected) return
+      // ここに来る = ④' の待機でも足りず「閉じただけ」だった。掴んだ行が生きている
+      // ＝ この行は消えていないので、同じノードに対してやり直しても二重削除にならない。
       if (attempt >= maxAttempts) break
       // 次の試行で ② の3点メニューを押せるよう、ダイアログが引くのを待つ。
       // 閉じきらなくても続行はするので失敗は握りつぶす。
