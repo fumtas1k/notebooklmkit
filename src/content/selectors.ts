@@ -153,6 +153,9 @@ export const SOURCE_TEXT = {
   audioOverview: /音声解説|音声概要|audio overview/i,
   // 音声生成中を表す Studio の表示テキスト（生成開始検知 = 再試行停止 ＆ 二重生成防止に使う。issue #60）。
   audioGenerating: /生成しています|生成中|generating/i,
+  // 「音声解説をカスタマイズ」ダイアログの確定ボタン（#84 / §8.12）。**完全一致**にする
+  // ——「音声解説を生成しています…」等を前方一致で拾うと生成中カードを押しに行くため。
+  generate: /^(生成|generate)$/i,
 } as const
 
 // ソースパネルの「追加」ボタン。自拡張が注入した UI（data-nlk 配下）は除外する。
@@ -250,6 +253,29 @@ function isRenderedVisible(el: HTMLElement): boolean {
     if (s.display === 'none' || s.visibility === 'hidden') return false
   }
   return true
+}
+
+// 「音声解説をカスタマイズ」ダイアログの「生成」ボタン。2026-08 の UI 刷新で、Studio の
+// 音声解説タイルは1クリックで即生成せず、このダイアログを開くようになった（§8.12 / #84）。
+// 実 DOM（2026-08-08 実測）の確定ボタンは
+// `button.mdc-button--unelevated.button-color--primary`（テキスト「生成」）だが、
+// 同ダイアログには close(×) / 長さトグル（短め・デフォルト）/「N 件のソース」も同居する。
+//
+// 安全策として、まず**ダイアログが音声解説のものであること**を本文テキストで確認する
+// （削除確認など無関係なダイアログの主ボタンを押すと破壊的になり得る）。そのうえで
+// テキスト完全一致で引く（前方一致は「音声解説を生成しています…」を拾う）。
+// クラスに依存しないのは、確定ボタン専用の安定クラスが無く汎用 Material クラスしか
+// 持たないため（削除ダイアログの yes-button のような手掛かりが無い）。
+// 自拡張 UI（[data-nlk]）は除外。該当なしは null（呼び出し側は素通りしてよい）。
+export function getAudioGenerateButton(root: ParentNode = document): HTMLElement | null {
+  const dialog = root.querySelector<HTMLElement>(SELECTORS.sourceDialog)
+  if (!dialog) return null
+  if (!SOURCE_TEXT.audioOverview.test(dialog.textContent ?? '')) return null
+  return (
+    Array.from(dialog.querySelectorAll<HTMLElement>('button'))
+      .filter((b) => !b.closest('[data-nlk]'))
+      .find((b) => SOURCE_TEXT.generate.test((b.textContent ?? '').trim())) ?? null
+  )
 }
 
 // Studio の「音声解説を生成しています…」生成中カード（スピナー付きコンテナ）の要素を返す。
