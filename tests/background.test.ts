@@ -51,6 +51,7 @@ describe('background onMessage listener', () => {
       { title: 'A', url: 'https://a.example/' },
       { title: 'Ext', url: 'chrome://extensions/' },
       { title: 'NLM', url: 'https://notebooklm.google.com/notebook/x' },
+      { title: 'GN', url: 'https://notebook.google.com/notebook/y' },
     ])
 
     expect(sendResponse).toHaveBeenCalledWith({
@@ -92,11 +93,12 @@ describe('background onMessage listener', () => {
 })
 
 describe('toImportableTabs', () => {
-  it('keeps only http/https tabs and drops NotebookLM itself', () => {
+  it('keeps only http/https tabs and drops NotebookLM itself (both domains)', () => {
     const tabs = [
       { title: 'A', url: 'https://a.example/' },
       { title: 'Ext', url: 'chrome://extensions/' },
       { title: 'NLM', url: 'https://notebooklm.google.com/notebook/x' },
+      { title: 'GN', url: 'https://notebook.google.com/notebook/y' },
       { title: 'B', url: 'http://b.example/' },
       { title: 'NoUrl' },
       { title: 'Broken', url: '::::' },

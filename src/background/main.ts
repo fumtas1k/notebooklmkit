@@ -1,5 +1,6 @@
 import {
   LIST_TABS_MESSAGE, CREATE_RESULT_MESSAGE, MAIN_WORLD_CLICK_MESSAGE, CLICK_TARGET_ATTR,
+  SUPPORTED_HOSTS, isSupportedHost,
   type TabInfo, type PendingCreate,
 } from '../types'
 
@@ -26,7 +27,7 @@ export function clickMarkedTargetInMainWorld(attr: string): void {
 }
 
 // chrome.tabs.query の結果からインポート候補になるタブだけを残す純関数。
-// http/https 以外（chrome:// 等）はソースにできず、NotebookLM 自身のタブも対象外。
+// http/https 以外（chrome:// 等）はソースにできず、NotebookLM 自身のタブ（新旧ドメインとも）も対象外。
 export function toImportableTabs(tabs: { title?: string; url?: string }[]): TabInfo[] {
   const out: TabInfo[] = []
   for (const t of tabs) {
@@ -38,7 +39,7 @@ export function toImportableTabs(tabs: { title?: string; url?: string }[]): TabI
       continue
     }
     if (u.protocol !== 'http:' && u.protocol !== 'https:') continue
-    if (u.hostname === 'notebooklm.google.com') continue
+    if (isSupportedHost(u.hostname)) continue
     out.push({ title: t.title ?? '', url: t.url })
   }
   return out
@@ -61,7 +62,9 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   })
 }
 
-export const NOTEBOOK_HOME = 'https://notebooklm.google.com/'
+// 現行ドメインのホーム。旧 notebooklm.google.com でも 301 で辿り着くが、余計な
+// リダイレクトを挟まないよう SUPPORTED_HOSTS 先頭（＝現行）から組み立てる。
+export const NOTEBOOK_HOME = `https://${SUPPORTED_HOSTS[0]}/`
 
 function isHttpUrl(url: string): boolean {
   try {

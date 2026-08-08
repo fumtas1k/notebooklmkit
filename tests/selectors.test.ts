@@ -24,10 +24,26 @@ const MENU_HTML = `
   <button class="mat-mdc-menu-item delete-button">削除</button>
 </div>`
 
+// 2026-08-08 実機 DOM（§8.10）。確定は yes-button / 取消は no-button。
+// 旧 primary-button / tertiary-button は消滅した。
 const DIALOG_HTML = `
 <mat-dialog-container>
-  <button class="primary-button">Delete</button>
-  <button class="tertiary-button">キャンセル</button>
+  <button class="mdc-icon-button mat-mdc-icon-button">close</button>
+  <button class="mdc-button no-button mdc-button--outlined mat-primary">キャンセル</button>
+  <button class="mdc-button yes-button mdc-button--unelevated mat-primary">削除</button>
+</mat-dialog-container>`
+
+// クラスが再び変わってもテキストで拾えること／取り違えないことの確認用。
+const DIALOG_HTML_NO_CLASS = `
+<mat-dialog-container>
+  <button class="mdc-button">キャンセル</button>
+  <button class="mdc-button">削除</button>
+</mat-dialog-container>`
+
+const DIALOG_HTML_EN = `
+<mat-dialog-container>
+  <button class="mdc-button">Cancel</button>
+  <button class="mdc-button">Delete</button>
 </mat-dialog-container>`
 
 describe('selectors', () => {
@@ -67,7 +83,49 @@ describe('selectors', () => {
     document.body.innerHTML = DIALOG_HTML
     const dialog = getConfirmDialog()!
     expect(dialog).not.toBeNull()
-    expect(getConfirmDeleteButton(dialog)?.textContent).toBe('Delete')
+    const btn = getConfirmDeleteButton(dialog)
+    expect(btn?.textContent).toBe('削除')
+    expect(btn?.classList.contains('yes-button')).toBe(true)
+  })
+})
+
+// 誤って「キャンセル」を掴むと削除が無言で no-op になり、掴み損ねると deleter が
+// タイムアウトしてモーダルが開いたまま止まる（#81 の実害）。両方向を固定する。
+describe('getConfirmDeleteButton', () => {
+  const dialogOf = (html: string): HTMLElement => {
+    document.body.innerHTML = html
+    return getConfirmDialog()!
+  }
+
+  it('prefers the stable yes-button class', () => {
+    expect(getConfirmDeleteButton(dialogOf(DIALOG_HTML))?.classList.contains('yes-button')).toBe(true)
+  })
+
+  it('falls back to an exact 削除 text match when the class is gone', () => {
+    expect(getConfirmDeleteButton(dialogOf(DIALOG_HTML_NO_CLASS))?.textContent).toBe('削除')
+  })
+
+  it('falls back to an exact Delete text match in English UI', () => {
+    expect(getConfirmDeleteButton(dialogOf(DIALOG_HTML_EN))?.textContent).toBe('Delete')
+  })
+
+  it('never returns the cancel button', () => {
+    for (const html of [DIALOG_HTML, DIALOG_HTML_NO_CLASS, DIALOG_HTML_EN]) {
+      const text = (getConfirmDeleteButton(dialogOf(html))?.textContent ?? '').trim()
+      expect(['キャンセル', 'Cancel']).not.toContain(text)
+    }
+  })
+
+  it('returns null rather than guessing when no delete button is present', () => {
+    const dialog = dialogOf('<mat-dialog-container><button class="mdc-button">キャンセル</button></mat-dialog-container>')
+    expect(getConfirmDeleteButton(dialog)).toBeNull()
+  })
+
+  it('does not mistake a cancel button that happens to carry the yes-button class', () => {
+    const dialog = dialogOf(
+      '<mat-dialog-container><button class="yes-button">キャンセル</button><button>削除</button></mat-dialog-container>',
+    )
+    expect(getConfirmDeleteButton(dialog)?.textContent).toBe('削除')
   })
 })
 

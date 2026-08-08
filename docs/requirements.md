@@ -17,7 +17,8 @@ Google NotebookLM（コンシューマ版）を便利にする Chrome 拡張機�
 
 - **対象ユーザー**: NotebookLM をヘビーに使う個人（リサーチ、学習、情報整理など）。
 - **対象ブラウザ**: Google Chrome（Manifest V3）。将来的に Chromium 系（Edge / Brave）も視野。
-- **対象サービス**: コンシューマ版 NotebookLM（`https://notebooklm.google.com/`）。
+- **対象サービス**: コンシューマ版 NotebookLM / Gemini Notebook（`https://notebook.google.com/`。
+  旧 `https://notebooklm.google.com/` は 301 リダイレクト。§8.9）。
   無料 / Plus を想定。**Enterprise 版は対象外**（別 API を持つため）。
 
 ## 3. 重要な前提・技術方針
@@ -63,7 +64,7 @@ Google NotebookLM（コンシューマ版）を便利にする Chrome 拡張機�
 **受け入れ基準（Phase 1）**
 - 一覧で任意の複数ノートブックを選択し、一括削除できる。
 - 削除中に NotebookLM の DOM 構造が想定外でも、クラッシュせずエラーを通知して停止する。
-- 拡張の権限は `host_permissions: notebooklm.google.com` を中心に最小限であること。
+- 拡張の権限は `host_permissions: notebook.google.com`（+ 旧 `notebooklm.google.com`）を中心に最小限であること。
 
 ### Phase 2 — インポート機能
 
@@ -121,7 +122,7 @@ Phase 1（一覧の一括削除）に必要な実 DOM を確認済み。UI 更�
 - **Angular Material 製**。`mdc-*` / `mat-*` は比較的安定、`ng-tns-*` / `_ngcontent-*` は動的生成のため**依存しない**。
 - ノートブックは内部的に「**project**」と呼ばれる。
 
-### ノートブック一覧（`https://notebooklm.google.com/`）
+### ノートブック一覧（`https://notebook.google.com/`。調査当時は `notebooklm.google.com`。§8.9）
 - 一覧はテーブル: `div.all-projects-container > div.my-projects-container > project-table > table.project-table > tbody > tr[mat-row][role=row]`。
 - テーブルは2つ存在（`project-table` ×2。最近／その他などのグループ）。
 - 各行 `tr` のカラム:
@@ -138,6 +139,7 @@ Phase 1（一覧の一括削除）に必要な実 DOM を確認済み。UI 更�
 3. 確認ダイアログ `mat-dialog-container`（タイトル「このノートブックをすべての場所から削除しますか？」）が出る。
    - 確定: `button.primary-button`（「Delete」）
    - 取消: `button.tertiary-button`（「キャンセル」）
+   - **注: 3. のボタンクラスは 2026-08-08 の UI 刷新で `yes-button` / `no-button` に変わった。§8.10 を参照。**
 4. 削除後は該当行が DOM から消え一覧が再描画される。→ **削除は対象を先に確定し、1件ずつ再検索しながら順次実行**する方式が安全。
 
 ### フィルタタブ
@@ -246,6 +248,124 @@ Phase 2（URL / タブ一括インポート）で使うソース追加フロー�
 - **削除フローは表と同一**: カードの3点メニューを開くと deleter が使う削除項目
   `.cdk-overlay-container button.mat-mdc-menu-item.delete-button`（テキスト「削除」）が同じく現れる
   → `deleter` は無改造でカードにも適用できる。
+
+## 8.9 ドメイン移行: notebooklm.google.com → notebook.google.com（2026-08-08 実機確認）
+
+NotebookLM が **`notebook.google.com`** へ移行し、ブランド表示も「**Gemini Notebook**」に変わった
+（`<title>` / ダイアログ文言 / フッターとも "Gemini Notebook"）。
+
+### 事実
+- `https://notebooklm.google.com/` → **301 恒久リダイレクト** → `https://notebook.google.com/`。
+  パスは保持される（`/notebook/<ID>` → `https://notebook.google.com/notebook/<ID>`）。
+  `curl -o /dev/null -w '%{http_code} -> %{redirect_url}'` で確認。
+- **DOM は無変更**。§8.5 / §8.6 / §8.7 / §8.8 のセレクタはすべて新ドメインでそのまま通る。
+  実機測定（カード表示・356 行）:
+  - `project-button.project-button` 356 / `span.project-button-title` 356
+  - `project-action-button button.project-button-more` 327（残り 29 はおすすめ = Reader 行。§8.5 と同じ内訳）
+  - チェックボックス注入先（`div.project-button-box` と直接子 `project-action-button`）327 / 327
+  - observer 対象 `welcome-page` あり、`.all-projects-container` あり、`button.create-new-button` あり
+  - ノートブックページ: パスは `/notebook/<ID>` のまま、`button.add-source-button`（aria-label「ソースを追加」）あり、
+    ソース追加ダイアログの「ウェブサイト」チップ → `textarea[formcontrolname="urls"]` → 「挿入」ボタン、
+    Studio の `.create-artifact-button-container`（音声解説）もすべて健在。
+
+### 影響（この移行だけで全機能が停止した）
+リダイレクトは**サーバー側 301** なので、旧ドメインではページが描画される前に転送される
+＝ `matches: ['https://notebooklm.google.com/*']` の content script は**一度も注入されない**。
+その結果、削除チェックボックス / アクションバー / インポートパネルが一切出ず、F2-2 も
+background が旧ドメインでタブを開くだけで content 側の作成処理が走らない（1分後に badge `!`）。
+
+### 設計への示唆
+- 対象ホストは `src/types.ts` の **`SUPPORTED_HOSTS` を単一の真実**にし、`manifest.config.ts` の
+  `host_permissions` / `content_scripts[].matches` と content の起動ガード（`isSupportedHost`）を
+  そこから導出する。従来はこの3箇所に文字列がハードコードされていて、ズレが silent failure になった。
+- 新旧**両ドメインを保持**する（旧は 301 で実質死んでいるが、段階ロールアウト / ロールバックに耐えるため）。
+- ホスト判定は完全一致で行う（`notebook.google.com.evil.test` / `evil-notebook.google.com` を弾く）。
+- **「UI が壊れた」ときはまず DOM を疑う前に URL を疑う。** セレクタが1つ残らず外れているように
+  見えるときは、そもそも content script が動いていない可能性が高い。
+
+## 8.10 削除確認ダイアログの刷新（2026-08-08 実機確認）
+
+§8.9 のドメイン移行と同時期に、削除確認ダイアログのボタンが差し替わっていた。
+**ドメイン移行とは独立した UI 変更**で、content script が動くようになって初めて顕在化した（#81）。
+
+### 変更点
+
+| | 旧（§8.5・2026-07-01） | 新（2026-08-08） |
+|---|---|---|
+| 確定 | `button.primary-button`（「Delete」）| **`button.yes-button`**（「削除」）|
+| 取消 | `button.tertiary-button`（「キャンセル」）| **`button.no-button`**（「キャンセル」）|
+| 文言 | 「このノートブックをすべての場所から削除しますか？」| 「このノートブックを削除しますか？」|
+
+実機での実測クラス（ダイアログ内の全 `button`）:
+- `mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-unthemed`（× 閉じる）
+- `mdc-button mat-mdc-button-base no-button mdc-button--outlined mat-mdc-outlined-button mat-primary`（キャンセル）
+- `mdc-button mat-mdc-button-base yes-button mdc-button--unelevated mat-mdc-unelevated-button mat-primary`（削除）
+
+旧 `button.primary-button` / `button.tertiary-button` のヒット数は **0**。
+3点メニュー側（`button.mat-mdc-menu-item.delete-button`）は無変更で、メニュー項目は
+「タイトルを編集 / コレクションに追加 / 上部に固定 / 削除」の4つ。
+
+### 症状と機序
+`getConfirmDeleteButton` が常に `null` を返し、`deleteOne` の④で `waitFor` が timeout（既定5秒）
+→ `deleteNotebooks` が失敗を記録して**安全側に停止**。NotebookLM 側の確認ダイアログは
+拡張が閉じないため、**モーダルが開いたまま止まって見える**。
+
+### 設計への示唆
+- 確定ボタンの取得は **安定クラス（`yes-button`）→ テキスト完全一致（`/^(削除|delete)$/i`）** の二段構え。
+- **「キャンセル系テキストは何があっても返さない」を最上位の不変条件**にする（実装では候補集合から
+  先に除外）。取り違えの事故の質が非対称なため:
+  - 掴み損ねる → タイムアウトで停止。安全でユーザーも気付ける。
+  - キャンセルを掴む → 削除が**無言で no-op** になり、行が消えないまま deleter が待ち続ける。
+- テキストは**完全一致**にする（前方一致だと「削除しない」「Delete all」等を拾い得る）。
+- 該当なしは `null` を返して停止させる（推測でクリックしない）。
+
+## 8.11 確認ダイアログの「出現 ≠ 操作可能」（2026-08-08 実機確認）
+
+§8.10 でボタンを正しく掴めるようにした後も、一括削除が1件目で止まった。切り分けの結果、
+**確認ダイアログ出現直後のクリックは、ダイアログを閉じるだけで削除を実行しない**ことが判明した（#82）。
+
+### 切り分け（実機 3 通り）
+
+| 実験 | クリック方式 | 結果 |
+|---|---|---|
+| 拡張の実走 | 隔離ワールド・出現即クリック | モーダルは閉じる、**削除されず**（`成功 0件 / 失敗 1件`）|
+| 実験1 | 主ワールド・**2000ms 待って**クリック | **削除成功**（`row.isConnected: false`、件数 −1）|
+| 実験2 | 主ワールド・**出現即**（1ms）クリック | モーダルは閉じる、**削除されず**（症状を再現）|
+
+→ **隔離ワールドは無関係**（§8.7 の音声解説タイルとは別の機序）。差は**クリックのタイミングだけ**。
+リロードしても対象が残ったため「一覧が古いだけ（楽観的 UI 未更新）」でもない。
+
+### 待つべき DOM シグナルが存在しない
+
+ダイアログ出現後 0 / 50 / 100 / 150 / 200 / 300 / 450 / 700 / 1000ms を計測したが、**何も変化しない**:
+
+- `mat-dialog-container` は 0ms 時点で既に存在し、`button.yes-button` も同時に存在
+- `getComputedStyle` の `opacity` はダイアログ・ボタンとも最初から `1`
+- インラインスタイルは `--mat-dialog-transition-duration: 150ms` のみで 1000ms まで不変
+- `.cdk-overlay-pane` は `position: static;` のまま
+
+見た目は出現時点で完成しており、未完了なのは Angular 側のハンドラ初期化。**DOM からは観測できない**ため、
+状態シグナル待ちにはできず固定待機で凌ぐしかない。
+
+### 対策（`deleter.ts`）
+
+1. **settle 待機**: 確認ボタンを見つけてから押すまでに待つ（既定 400ms、`settleMs` で注入可能）。
+   実機では 400ms で初回成功（`attempts: 1`）を 3 件連続で確認。
+2. **未削除を確認したうえでの再試行**: settle だけでは環境差（マシン速度・一覧の重さ）で
+   取りこぼし得るため、消滅待ちがタイムアウトしたら `row.isConnected` を見て
+   **行が残っている＝未削除が確定している**ときに限りフローごとやり直す（既定 3 回、`maxAttempts`）。
+
+再試行が二重削除にならない根拠: 再試行するのは「掴んだ行ノードがまだ DOM に接続されている」場合だけで、
+これは削除が起きていないことと同値。逆に行が消えているのに消滅待ちが失敗した場合は、状況が読めないため
+再試行せず throw する（成功済みかもしれないものを押し直すと同名の別行を巻き込むため）。
+対象をまたいで再試行することはないので、「失敗したら停止」という Phase 1 の安全方針は維持される。
+
+### 設計への示唆
+- **要素が「出現した」ことと「操作を受け付ける」ことは別**。`waitFor` で掴んだ直後に押す実装は、
+  アニメーションや遅延初期化を持つ UI に対して silent failure を生む。
+- **クリックが効かないときは「イベントが届いていない」と決めつけない。** ここでは実際に届いており
+  （ダイアログは閉じた）、届いた先の状態が未完成だった。§8.7 の「合成イベントが効かない」と症状が
+  似ているため、主ワールド化のような重い対策に飛びつく前に**待機時間だけを変えた対照実験**を行う。
 
 ## 9. スコープ外（当面）
 
