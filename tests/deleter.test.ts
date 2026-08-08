@@ -32,6 +32,8 @@ function makeWorld(titles: string[]) {
     },
     waitFor,
     timeout: 200,
+    // テストは実時間を待たない。settle 待機が「呼ばれたか / 何 ms か」だけ検証する。
+    delay: async () => {},
   }
   return { deps, container }
 }
@@ -110,5 +112,98 @@ describe('deleteNotebooks', () => {
     expect(res.succeeded.length).toBe(2)
     expect(res.failed).toEqual([])
     expect(container.children.length).toBe(0)
+  })
+})
+
+// #82: 確認ダイアログ出現直後のクリックは「閉じるだけで削除されない」（実機確認・§8.11）。
+// 対策は (1) confirm クリック前の settle 待機、(2) 未削除を確認したうえでの再試行。
+describe('confirm click settling and retry', () => {
+  // click ディスパッチは dataset.name で分岐するため、フェイク要素には必ず名前を付ける。
+  const named = (name: string): HTMLElement => {
+    const e = document.createElement('div')
+    e.dataset.name = name
+    return e
+  }
+
+  it('waits (settle) after finding the confirm button and before clicking it', async () => {
+    const { deps } = makeWorld(['A'])
+    const order: string[] = []
+    const realClick = deps.click
+    deps.delay = async (ms) => { order.push(`delay:${ms}`) }
+    deps.click = (e) => { order.push(`click:${e.dataset.name}`); realClick(e) }
+    await deleteNotebooks(targets('A'), deps, {})
+    // 「confirm ボタンを見つけた後・クリックする前」に待機が入っていること
+    expect(order).toContain('click:confirm')
+    const settleIdx = order.findIndex((o) => o.startsWith('delay:'))
+    expect(settleIdx).toBeGreaterThanOrEqual(0)
+    expect(settleIdx).toBeLessThan(order.indexOf('click:confirm'))
+  })
+
+  it('uses the configured settleMs', async () => {
+    const { deps } = makeWorld(['A'])
+    const waited: number[] = []
+    deps.delay = async (ms) => { waited.push(ms) }
+    deps.settleMs = 321
+    await deleteNotebooks(targets('A'), deps, {})
+    expect(waited).toContain(321)
+  })
+
+  it('retries the whole flow when the first confirm click silently fails', async () => {
+    const { deps, container } = makeWorld(['A'])
+    // 1回目の confirm クリックだけ「ダイアログは閉じるが行は消えない」を再現する。
+    let menuOpen = false, dialogOpen = false, confirmClicks = 0
+    let rowToRemove: HTMLElement | null = null
+    deps.getMoreButton = (row) => { const b = named('more'); (b as any)._row = row; return b }
+    deps.click = (e) => {
+      const name = e.dataset.name
+      if (name === 'more') { menuOpen = true; rowToRemove = (e as any)._row ?? null }
+      else if (name === 'delete') { dialogOpen = true; menuOpen = false }
+      else if (name === 'confirm') {
+        confirmClicks++
+        dialogOpen = false                       // ダイアログは必ず閉じる
+        if (confirmClicks >= 2) rowToRemove?.remove()  // 2回目で初めて実際に消える
+      }
+    }
+    deps.getDeleteMenuItem = () => (menuOpen ? named('delete') : null)
+    deps.getConfirmDialog = () => (dialogOpen ? named('dialog') : null)
+    deps.getConfirmDeleteButton = () => named('confirm')
+
+    const res = await deleteNotebooks(targets('A'), deps, {})
+    expect(confirmClicks).toBe(2)
+    expect(res.succeeded).toEqual(['title:A'])
+    expect(res.failed).toEqual([])
+    expect(container.children.length).toBe(0)
+  })
+
+  it('gives up after maxAttempts and records the failure (does not loop forever)', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
+    let menuOpen = false, dialogOpen = false, confirmClicks = 0
+    deps.click = (e) => {
+      const name = e.dataset.name
+      if (name === 'more') menuOpen = true
+      else if (name === 'delete') { dialogOpen = true; menuOpen = false }
+      else if (name === 'confirm') { confirmClicks++; dialogOpen = false } // 行は永久に消えない
+    }
+    deps.getDeleteMenuItem = () => (menuOpen ? named('delete') : null)
+    deps.getConfirmDialog = () => (dialogOpen ? named('dialog') : null)
+    deps.getConfirmDeleteButton = () => named('confirm')
+    deps.maxAttempts = 3
+
+    const res = await deleteNotebooks(targets('A', 'B'), deps, {})
+    expect(confirmClicks).toBe(3)          // 上限まで試して打ち切る
+    expect(res.succeeded).toEqual([])
+    expect(res.failed.length).toBe(1)      // 最初の失敗で停止（B には進まない）
+    expect(res.failed[0].key).toBe('title:A')
+    expect(container.children.length).toBe(2)
+  })
+
+  it('never re-clicks confirm once the row is gone (no double deletion)', async () => {
+    const { deps } = makeWorld(['A'])
+    let confirmClicks = 0
+    const realClick = deps.click
+    deps.click = (e) => { if (e.dataset.name === 'confirm') confirmClicks++; realClick(e) }
+    const res = await deleteNotebooks(targets('A'), deps, {})
+    expect(confirmClicks).toBe(1)          // 成功した1件を二度押さない
+    expect(res.succeeded).toEqual(['title:A'])
   })
 })
