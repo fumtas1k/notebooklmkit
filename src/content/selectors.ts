@@ -14,8 +14,11 @@ export const SELECTORS = {
   moreButton: 'project-action-button button.project-button-more',
   deleteMenuItem: '.cdk-overlay-container button.mat-mdc-menu-item.delete-button',
   confirmDialog: 'mat-dialog-container',
-  confirmDeleteButton: 'button.primary-button',
-  cancelButton: 'button.tertiary-button',
+  // 削除確認ダイアログのボタン。2026-08-08 の UI 刷新で
+  // primary-button / tertiary-button → yes-button / no-button に変わった（§8.10）。
+  // 取得は getConfirmDeleteButton（クラス＋テキストの二段構え）を使うこと。
+  confirmDeleteButton: 'button.yes-button',
+  cancelButton: 'button.no-button',
   // 一覧ページの安定ルート。表示モード切替（カード⇄一覧）で .all-projects-container は
   // 新ノードに置換されるが、この welcome-page は生存する（2026-07-05 実機確認。
   // 記録は docs/superpowers/specs/2026-07-05-view-switch-checkbox-reinject-design.md）。
@@ -112,8 +115,32 @@ export function getConfirmDialog(root: ParentNode = document): HTMLElement | nul
   return root.querySelector<HTMLElement>(SELECTORS.confirmDialog)
 }
 
+// 削除確認ダイアログのボタン文言（ja / en）。NotebookLM の UI 言語に依らず動くよう両対応。
+// 完全一致で使う（前方一致だと「削除しない」等を拾い得る）。
+export const CONFIRM_TEXT = {
+  confirmDelete: /^(削除|delete)$/i,
+  cancel: /^(キャンセル|cancel)$/i,
+} as const
+
+// 削除確認ダイアログの「削除」ボタン。2026-08-08 実機（§8.10）は
+// button.yes-button（テキスト「削除」）／取消は button.no-button（「キャンセル」）で、
+// 旧 primary-button / tertiary-button は消滅した。旧セレクタのままだと常に null になり、
+// deleter の waitFor がタイムアウトして**確認モーダルが開いたまま停止**する（#81）。
+//
+// 取り違えは事故の質が非対称: 掴み損ねる → 停止（安全・気付ける）、キャンセルを掴む →
+// 削除が無言で no-op になり、しかも deleter は行が消えないまま次へ進もうとする。
+// そこで「キャンセル系テキストは何があっても返さない」を最上位の不変条件にし、
+// 安定クラス → テキスト完全一致（ja/en）の順に探す。前方一致ではなく完全一致にするのは
+// 「削除しない」「Delete all」等の別ボタンを拾わないため。該当なしは null（＝安全停止）。
 export function getConfirmDeleteButton(dialog: HTMLElement): HTMLElement | null {
-  return dialog.querySelector<HTMLElement>(SELECTORS.confirmDeleteButton)
+  const buttons = Array.from(dialog.querySelectorAll<HTMLElement>('button')).filter(
+    (b) => !CONFIRM_TEXT.cancel.test((b.textContent ?? '').trim()),
+  )
+  return (
+    buttons.find((b) => b.classList.contains('yes-button')) ??
+    buttons.find((b) => CONFIRM_TEXT.confirmDelete.test((b.textContent ?? '').trim())) ??
+    null
+  )
 }
 
 // ソース追加フローのテキストマッチャ（ja / en）。NotebookLM の UI 言語に依らず動くよう両対応。

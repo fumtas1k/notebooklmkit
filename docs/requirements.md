@@ -139,6 +139,7 @@ Phase 1（一覧の一括削除）に必要な実 DOM を確認済み。UI 更�
 3. 確認ダイアログ `mat-dialog-container`（タイトル「このノートブックをすべての場所から削除しますか？」）が出る。
    - 確定: `button.primary-button`（「Delete」）
    - 取消: `button.tertiary-button`（「キャンセル」）
+   - **注: 3. のボタンクラスは 2026-08-08 の UI 刷新で `yes-button` / `no-button` に変わった。§8.10 を参照。**
 4. 削除後は該当行が DOM から消え一覧が再描画される。→ **削除は対象を先に確定し、1件ずつ再検索しながら順次実行**する方式が安全。
 
 ### フィルタタブ
@@ -281,6 +282,42 @@ background が旧ドメインでタブを開くだけで content 側の作成処
 - ホスト判定は完全一致で行う（`notebook.google.com.evil.test` / `evil-notebook.google.com` を弾く）。
 - **「UI が壊れた」ときはまず DOM を疑う前に URL を疑う。** セレクタが1つ残らず外れているように
   見えるときは、そもそも content script が動いていない可能性が高い。
+
+## 8.10 削除確認ダイアログの刷新（2026-08-08 実機確認）
+
+§8.9 のドメイン移行と同時期に、削除確認ダイアログのボタンが差し替わっていた。
+**ドメイン移行とは独立した UI 変更**で、content script が動くようになって初めて顕在化した（#81）。
+
+### 変更点
+
+| | 旧（§8.5・2026-07-01） | 新（2026-08-08） |
+|---|---|---|
+| 確定 | `button.primary-button`（「Delete」）| **`button.yes-button`**（「削除」）|
+| 取消 | `button.tertiary-button`（「キャンセル」）| **`button.no-button`**（「キャンセル」）|
+| 文言 | 「このノートブックをすべての場所から削除しますか？」| 「このノートブックを削除しますか？」|
+
+実機での実測クラス（ダイアログ内の全 `button`）:
+- `mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-unthemed`（× 閉じる）
+- `mdc-button mat-mdc-button-base no-button mdc-button--outlined mat-mdc-outlined-button mat-primary`（キャンセル）
+- `mdc-button mat-mdc-button-base yes-button mdc-button--unelevated mat-mdc-unelevated-button mat-primary`（削除）
+
+旧 `button.primary-button` / `button.tertiary-button` のヒット数は **0**。
+3点メニュー側（`button.mat-mdc-menu-item.delete-button`）は無変更で、メニュー項目は
+「タイトルを編集 / コレクションに追加 / 上部に固定 / 削除」の4つ。
+
+### 症状と機序
+`getConfirmDeleteButton` が常に `null` を返し、`deleteOne` の④で `waitFor` が timeout（既定5秒）
+→ `deleteNotebooks` が失敗を記録して**安全側に停止**。NotebookLM 側の確認ダイアログは
+拡張が閉じないため、**モーダルが開いたまま止まって見える**。
+
+### 設計への示唆
+- 確定ボタンの取得は **安定クラス（`yes-button`）→ テキスト完全一致（`/^(削除|delete)$/i`）** の二段構え。
+- **「キャンセル系テキストは何があっても返さない」を最上位の不変条件**にする（実装では候補集合から
+  先に除外）。取り違えの事故の質が非対称なため:
+  - 掴み損ねる → タイムアウトで停止。安全でユーザーも気付ける。
+  - キャンセルを掴む → 削除が**無言で no-op** になり、行が消えないまま deleter が待ち続ける。
+- テキストは**完全一致**にする（前方一致だと「削除しない」「Delete all」等を拾い得る）。
+- 該当なしは `null` を返して停止させる（推測でクリックしない）。
 
 ## 9. スコープ外（当面）
 
