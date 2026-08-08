@@ -3,7 +3,7 @@ import {
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton, getCreateNewButton, getAudioOverviewButton,
-  getAudioGenerationCard, SOURCE_TEXT, isDeletableRow, getListObserveTarget,
+  getAudioGenerationCard, getAudioGenerateButton, SOURCE_TEXT, isDeletableRow, getListObserveTarget,
 } from './selectors'
 import {
   makeTarget, type NotebookTarget, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type PendingCreate,
@@ -376,6 +376,9 @@ function defaultCreateRunner(root: ParentNode): (urls: string[]) => Promise<bool
     if (ok) {
       void triggerAudioOverview({
         getAudioOverviewButton: () => getAudioOverviewButton(root),
+        // #84: タイルは即生成せず「音声解説をカスタマイズ」ダイアログを開くようになった（§8.12）。
+        // ダイアログは cdk-overlay-container（root の外）に描画されるため document から引く。
+        getAudioGenerateButton: () => getAudioGenerateButton(),
         click: (el) => { requestMainWorldClick(el) },
         // 生成開始の検知（＝再試行停止 ＆ 二重生成防止）。既存のテキスト判定に加え、生成カード要素の
         // 出現も OR で見る（表示テキストの描画遅延より早く検知しうる。strictly more sensitive。#60）。

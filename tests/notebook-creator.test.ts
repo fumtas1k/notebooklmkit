@@ -77,12 +77,99 @@ function makeAudioDeps(over: Partial<AudioOverviewDeps> = {}): AudioOverviewDeps
   return {
     clicks,
     getAudioOverviewButton: () => btn,
+    // 既定ではカスタマイズダイアログは出ない（旧 UI 相当）。#84 のテストで差し替える。
+    getAudioGenerateButton: () => null,
     click: (el) => { clicks.push(el) },
     isGenerating: () => false,
     waitFor: fakeWaitFor,
+    delay: async () => {},
     ...over,
   }
 }
+
+// #84: タイルクリックが「音声解説をカスタマイズ」ダイアログを開くようになった（§8.12）。
+// ダイアログが出たら「生成」を押す。出ない経路（旧 UI / 将来の変更）でも壊れないこと。
+describe('triggerAudioOverview with the customize dialog', () => {
+  it('clicks 生成 in the dialog and reports success', async () => {
+    const gen = document.createElement('button')
+    gen.textContent = '生成'
+    let calls = 0
+    const d = makeAudioDeps({
+      getAudioGenerateButton: () => gen,
+      // タイル→ダイアログ→生成クリックの後で生成中になる
+      isGenerating: () => { calls++; return calls >= 4 },
+    })
+    const ok = await triggerAudioOverview(d)
+    expect(ok).toBe(true)
+    expect(d.clicks).toContain(gen)          // 生成ボタンを押している
+    expect(d.clicks[0]).not.toBe(gen)        // 先にタイルを押している
+  })
+
+  it('settles before clicking 生成 (the dialog is not clickable the instant it appears)', async () => {
+    const gen = document.createElement('button')
+    gen.textContent = '生成'
+    const order: string[] = []
+    let calls = 0
+    const d = makeAudioDeps({
+      getAudioGenerateButton: () => gen,
+      isGenerating: () => { calls++; return calls >= 4 },
+    })
+    d.delay = async (ms) => { order.push(`delay:${ms}`) }
+    const realClick = d.click
+    d.click = (el) => { order.push(el === gen ? 'click:generate' : 'click:tile'); realClick(el) }
+    await triggerAudioOverview(d)
+    const delayIdx = order.findIndex((o) => o.startsWith('delay:'))
+    expect(delayIdx).toBeGreaterThanOrEqual(0)
+    expect(delayIdx).toBeLessThan(order.indexOf('click:generate'))
+  })
+
+  it('still works when no dialog appears (old UI / future change)', async () => {
+    let calls = 0
+    const d = makeAudioDeps({
+      getAudioGenerateButton: () => null,
+      isGenerating: () => { calls++; return calls >= 3 },
+    })
+    const ok = await triggerAudioOverview(d)
+    expect(ok).toBe(true)
+    expect(d.clicks).toHaveLength(1)         // タイルのみ
+  })
+
+  // codex P2: settle 待機だけが signal を見ないと、中断後に生成を開始してしまう。
+  it('passes the abort signal to the settle wait', async () => {
+    const gen = document.createElement('button')
+    gen.textContent = '生成'
+    const ac = new AbortController()
+    const seen: (AbortSignal | undefined)[] = []
+    let calls = 0
+    const d = makeAudioDeps({
+      getAudioGenerateButton: () => gen,
+      isGenerating: () => { calls++; return calls >= 4 },
+    })
+    d.delay = async (_ms, sig) => { seen.push(sig) }
+    await triggerAudioOverview(d, { signal: ac.signal })
+    expect(seen[0]).toBe(ac.signal)
+  })
+
+  it('does not click 生成 when the signal aborts during the settle wait', async () => {
+    const gen = document.createElement('button')
+    gen.textContent = '生成'
+    const ac = new AbortController()
+    const d = makeAudioDeps({ getAudioGenerateButton: () => gen, isGenerating: () => false })
+    d.delay = async () => { ac.abort() }   // settle 中に中断が入る
+    const ok = await triggerAudioOverview(d, { signal: ac.signal })
+    expect(d.clicks).not.toContain(gen)    // 中断後に生成を開始しない
+    expect(ok).toBe(false)
+  })
+
+  it('does not click 生成 when generation already started', async () => {
+    const gen = document.createElement('button')
+    gen.textContent = '生成'
+    const d = makeAudioDeps({ getAudioGenerateButton: () => gen, isGenerating: () => true })
+    const ok = await triggerAudioOverview(d)
+    expect(ok).toBe(true)
+    expect(d.clicks).toEqual([])             // 二重生成しない
+  })
+})
 
 describe('triggerAudioOverview', () => {
   it('clicks and succeeds once generation starts', async () => {

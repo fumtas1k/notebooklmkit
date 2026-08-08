@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton, getCreateNewButton,
-  getAudioOverviewButton, getAudioGenerationCard,
+  getAudioOverviewButton, getAudioGenerationCard, getAudioGenerateButton,
 } from '../src/content/selectors'
 
 describe('source-flow selectors', () => {
@@ -203,6 +203,73 @@ describe('source-flow selectors', () => {
       <button aria-label="音声解説をカスタマイズ">chevron_forward</button>
       <div role="button" class="create-artifact-button-container" aria-label="音声解説"><span>音声解説</span></div>`
     expect(getAudioOverviewButton()?.classList.contains('create-artifact-button-container')).toBe(true)
+  })
+})
+
+// #84: 2026-08 の UI 刷新でタイルクリックが「音声解説をカスタマイズ」ダイアログを開くように
+// なった。生成を始めるにはダイアログ内の「生成」ボタンを押す必要がある（§8.12）。
+describe('getAudioGenerateButton', () => {
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  // 実機 DOM（2026-08-08 実測）を模したダイアログ
+  const DIALOG = `
+    <mat-dialog-container>
+      <span>音声解説をカスタマイズ</span>
+      <button class="mdc-icon-button mat-mdc-icon-button">close</button>
+      <button class="mat-button-toggle-button">短め</button>
+      <button class="mat-button-toggle-button">デフォルト</button>
+      <button class="mdc-button mdc-button--outlined">1 件のソース</button>
+      <button class="mdc-button mdc-button--unelevated button-color--primary">生成</button>
+    </mat-dialog-container>`
+
+  it('finds the 生成 button in the audio customize dialog', () => {
+    document.body.innerHTML = DIALOG
+    expect(getAudioGenerateButton()?.textContent?.trim()).toBe('生成')
+  })
+
+  it('finds the Generate button in English UI', () => {
+    document.body.innerHTML = `
+      <mat-dialog-container>
+        <span>Customize Audio Overview</span>
+        <button>Cancel</button>
+        <button>Generate</button>
+      </mat-dialog-container>`
+    expect(getAudioGenerateButton()?.textContent?.trim()).toBe('Generate')
+  })
+
+  it('returns null when no dialog is open', () => {
+    document.body.innerHTML = '<div>音声解説</div>'
+    expect(getAudioGenerateButton()).toBeNull()
+  })
+
+  // 削除確認など無関係なダイアログの主ボタンを押さない（取り違えは破壊的になり得る）
+  it('ignores a dialog that is not about the audio overview', () => {
+    document.body.innerHTML = `
+      <mat-dialog-container>
+        <span>このノートブックを削除しますか？</span>
+        <button class="no-button">キャンセル</button>
+        <button class="yes-button">削除</button>
+      </mat-dialog-container>`
+    expect(getAudioGenerateButton()).toBeNull()
+  })
+
+  // 前方一致だと「生成しています」を拾い、生成中のカードを押しに行ってしまう
+  it('uses exact text matching (does not match 生成しています)', () => {
+    document.body.innerHTML = `
+      <mat-dialog-container>
+        <span>音声解説</span>
+        <button>音声解説を生成しています…</button>
+      </mat-dialog-container>`
+    expect(getAudioGenerateButton()).toBeNull()
+  })
+
+  it('ignores buttons injected by this extension', () => {
+    document.body.innerHTML = `
+      <mat-dialog-container>
+        <span>音声解説をカスタマイズ</span>
+        <div data-nlk="panel"><button>生成</button></div>
+      </mat-dialog-container>`
+    expect(getAudioGenerateButton()).toBeNull()
   })
 })
 
