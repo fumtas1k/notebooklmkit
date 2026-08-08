@@ -134,6 +134,33 @@ describe('triggerAudioOverview with the customize dialog', () => {
     expect(d.clicks).toHaveLength(1)         // タイルのみ
   })
 
+  // codex P2: settle 待機だけが signal を見ないと、中断後に生成を開始してしまう。
+  it('passes the abort signal to the settle wait', async () => {
+    const gen = document.createElement('button')
+    gen.textContent = '生成'
+    const ac = new AbortController()
+    const seen: (AbortSignal | undefined)[] = []
+    let calls = 0
+    const d = makeAudioDeps({
+      getAudioGenerateButton: () => gen,
+      isGenerating: () => { calls++; return calls >= 4 },
+    })
+    d.delay = async (_ms, sig) => { seen.push(sig) }
+    await triggerAudioOverview(d, { signal: ac.signal })
+    expect(seen[0]).toBe(ac.signal)
+  })
+
+  it('does not click 生成 when the signal aborts during the settle wait', async () => {
+    const gen = document.createElement('button')
+    gen.textContent = '生成'
+    const ac = new AbortController()
+    const d = makeAudioDeps({ getAudioGenerateButton: () => gen, isGenerating: () => false })
+    d.delay = async () => { ac.abort() }   // settle 中に中断が入る
+    const ok = await triggerAudioOverview(d, { signal: ac.signal })
+    expect(d.clicks).not.toContain(gen)    // 中断後に生成を開始しない
+    expect(ok).toBe(false)
+  })
+
   it('does not click 生成 when generation already started', async () => {
     const gen = document.createElement('button')
     gen.textContent = '生成'

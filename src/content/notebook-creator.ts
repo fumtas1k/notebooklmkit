@@ -70,7 +70,9 @@ export interface AudioOverviewDeps {
   // 各クリック後に生成開始を待つ時間（ms）。既定 30s（生成中表示の遅延に対する二重生成防止マージン。issue #60）。
   timeout?: number
   // ダイアログ出現から「生成」クリックまでの待機（#82 と同じ理由）。テストはフェイクを注入する。
-  delay?(ms: number): Promise<void>
+  // signal を受けるのは、待機中の中断を取りこぼさないため（codex P2）。他の待機（waitFor）は
+  // 既に signal を見ているので、ここだけ見ないと中断後に生成を開始してしまう。
+  delay?(ms: number, signal?: AbortSignal): Promise<void>
   settleMs?: number
 }
 
@@ -98,7 +100,16 @@ export async function triggerAudioOverview(
 ): Promise<boolean> {
   const { signal } = opts
   const clickInterval = deps.timeout ?? 30000
-  const sleep = deps.delay ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+  // 既定の待機も中断可能にする（注入されなかった場合の挙動を deps.delay と揃える）。
+  const sleep =
+    deps.delay ??
+    ((ms: number, sig?: AbortSignal) =>
+      new Promise<void>((resolve, reject) => {
+        if (sig?.aborted) return reject(new Error('aborted'))
+        const onAbort = () => { clearTimeout(timer); reject(new Error('aborted')) }
+        const timer = setTimeout(() => { sig?.removeEventListener('abort', onAbort); resolve() }, ms)
+        sig?.addEventListener('abort', onAbort, { once: true })
+      }))
   const enabledTile = () => {
     const b = deps.getAudioOverviewButton()
     if (!b) return null
@@ -124,7 +135,11 @@ export async function triggerAudioOverview(
         // W1封じと同様、待っている間に生成が始まっていたら押さない（二重生成防止）。
         if (deps.isGenerating()) return true
         // #82 と同型: 出現直後は押しても効かないことがあるため落ち着かせてから押す。
-        await sleep(deps.settleMs ?? DIALOG_SETTLE_MS)
+        await sleep(deps.settleMs ?? DIALOG_SETTLE_MS, signal)
+        // 待機中に中断された場合は押さない。生成は取り消せないので、中断は
+        // 「押す直前」まで効かせる（codex P2）。sleep 自体が中断を投げない
+        // 実装を注入されても取りこぼさないよう、ここでも確認する。
+        if (signal?.aborted) return false
         deps.click(genBtn)
       }
       // クリック後、生成開始を clickInterval だけ待つ。開始すれば成功、しなければ（早すぎクリック）再試行。
