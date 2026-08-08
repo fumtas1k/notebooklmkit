@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 概要
 
-Google NotebookLM のコンシューマ版（`https://notebooklm.google.com/`）に機能を追加する Manifest V3 の Chrome 拡張機能。NotebookLM には**公開 API が存在しない**ため、すべて **content script からの DOM 自動化**（NotebookLM 自身の UI フローを疑似クリックで操作）で実現している。RPC / `batchexecute` 直接呼び出しは明確にスコープ外（`docs/requirements.md` §3 参照）。
+Google NotebookLM のコンシューマ版（`https://notebook.google.com/`。2026-08-08 に `notebooklm.google.com` から 301 リダイレクトで移行し、表示名も「Gemini Notebook」に。旧ドメインも対応維持。§8.9）に機能を追加する Manifest V3 の Chrome 拡張機能。NotebookLM には**公開 API が存在しない**ため、すべて **content script からの DOM 自動化**（NotebookLM 自身の UI フローを疑似クリックで操作）で実現している。RPC / `batchexecute` 直接呼び出しは明確にスコープ外（`docs/requirements.md` §3 参照）。
 
 Phase 1（実装済み）: ノートブック一覧の複数選択＋一括削除。Phase 2（実装済み: F2-1 / F2-2 / F2-3）: F2-1/F2-3 はタブ / URL の一括インポート、F2-2 はツールバーアイコンから現在ページ（または選択タブ）を**新規ノートブックとして作成**（既存への追記ではない）＋作成後に音声解説の生成を自動押下。全体のフェーズ計画は `docs/requirements.md` を参照。
 
@@ -42,7 +42,7 @@ content script（`src/content/`）と background service worker（`src/backgroun
 
 **F2-2（現在ページから新規ノートブック作成）も同じ DI 分離。** `src/content/notebook-creator.ts` は `createNotebookWithUrls`（「新規作成 → ウェブサイト → URL 入力 → 挿入 → ダイアログ消滅待ち」を importer 同様の DI で実行）と `triggerAudioOverview`（作成成功時に音声解説の生成タイルを fire-and-forget で押下。生成開始検知＝再試行停止＆二重生成防止は「表示テキスト一致 OR 生成カード要素の出現」の OR。§8.7 / issue #60）を提供する。ツールバー起点の配線は background（上記）＋ `main.ts` の `handlePendingCreate`（storage の `pendingCreate` を TTL 内なら1度だけ実行し結果を background に返す。実機フローは §8.7 / issue #51）。
 
-**配線は `main.ts`。** `start()` は `.all-projects-container` の出現を待つ（NotebookLM はクライアントレンダリングの Angular SPA で、script 評価時点ではコンテナが無いことが多い）。その後 `init()` が SelectionStore を用意し、行チェックボックスを注入し、アクションバーをマウントし、再描画時にチェックボックスを再注入する `MutationObserver` を設定する。**削除実行中は observer を切断する**（拡張自身が一覧を大量に書き換えるため）。`finally` で再接続する。`main.ts` 末尾では `location.hostname === 'notebooklm.google.com'` のときだけ自動起動するので、テスト（jsdom）でモジュールを import しても副作用は無い。
+**配線は `main.ts`。** `start()` は `.all-projects-container` の出現を待つ（NotebookLM はクライアントレンダリングの Angular SPA で、script 評価時点ではコンテナが無いことが多い）。その後 `init()` が SelectionStore を用意し、行チェックボックスを注入し、アクションバーをマウントし、再描画時にチェックボックスを再注入する `MutationObserver` を設定する。**削除実行中は observer を切断する**（拡張自身が一覧を大量に書き換えるため）。`finally` で再接続する。`main.ts` 末尾では `isSupportedHost(location.hostname)`（`src/types.ts` の `SUPPORTED_HOSTS`）のときだけ自動起動するので、テスト（jsdom）でモジュールを import しても副作用は無い。
 
 **その他のモジュール:** `selection.ts`（監視可能な `SelectionStore`。中身は Set）、`dom-utils.ts`（タイムアウト＋中断つきポーリングの `waitFor`、`safeClick`、`setInputValue`、`TimeoutError` / `AbortError`）、`i18n.ts`（`{placeholder}` テンプレート方式。`navigator.language` で JA / EN）、`confirm-dialog.ts` ＋ `ui/`（チェックボックス注入、アクションバー、インポートパネル、大量 / 全選択削除時の件数タイプ確認）、`tabs-bridge.ts`（content → background の `nlk:list-tabs` で同一ウィンドウのタブ URL を取得。F2-1）、`url-list.ts`（貼り付けテキストから URL を抽出・正規化。F2-3）。`notebook-creator.ts` は上記 F2-2 段落を参照。
 
@@ -62,11 +62,12 @@ content script（`src/content/`）と background service worker（`src/backgroun
 - **長寿命の `MutationObserver` は、置換され得るノードでなく生存する安定祖先に張る。** NotebookLM は再描画や表示モード切替（カード⇄一覧）で一覧コンテナ `.all-projects-container` を**新ノードに丸ごと置換**する（実 DOM は `docs/requirements.md` §8.8）。掴んだノード自体を `observe` すると、置換後は detached な旧ノードを監視し続けて発火せず、チェックボックス再注入が止まる silent failure になる（#67）。切替を生き延びる祖先（`welcome-page` → `.welcome-page-container` → `.app-body`。実装は `getListObserveTarget`）に多段フォールバックで張り、単一タグのリネームで即再発しないようにする。コンテナが一瞬 detach しても pathname 不変なら teardown しないルーターガード（#38）と合わせて、「掴んだノードの寿命」を常に疑うこと。
 - **`host.insertBefore(node, before)` の `before` は host の直接子に限定する。** `before` が host の直接子でないと DOM 仕様上 `NotFoundError` を投げる。参照要素を子孫検索（`host.querySelector(sel)`）で求めると、将来 NotebookLM がその要素をラップしたとき子孫を拾って throw し、注入ループ（`injectRowCheckboxes`）全体が中断して**全行でチェックボックスが消え、observer 再発火で throw を繰り返す** silent failure になる。直接子のみに絞る（`host.querySelector(':scope > ' + sel)`）と、ラップ時は `before=null` → 末尾 append で graceful degradation する（#73 の `getCheckboxHost` カード分岐が該当。カード DOM は §8.8。「掴んだノードの寿命 / silent failure を疑う」方針の具体例）。
 - **jsdom で検証できない CSS / 配置 / スタッキング（z-index 等）は、実ページで経験的に検証する。** 単体テストは DOM 構造・イベント・ストア更新は固定できるが、レイアウトや `z-index`・`elementFromPoint` の重なりは jsdom では確認できない。拡張を再ビルド・再読込せずとも、**実 NotebookLM ページ（Claude in Chrome）に拡張と同一の注入ロジック＋CSS を適用**し、`getBoundingClientRect`（配置）・`elementFromPoint`（最前面がその要素か＝オーバーレイより前面か）・クリック後の `location.href` 不変（遷移しないか）を測ると確実かつ高速（#66 の E2E で有効。測定結果は §8.8）。視覚依存の変更は §8.x に測定結果を記録し、実機 E2E チェックリストにも観点を残す。
+- **UI が「全部」壊れたときは DOM ではなく URL を疑う。** セレクタが1つ残らず外れているように見える／注入 UI が一切出ないときは、そもそも content script が注入されていない可能性が高い。2026-08-08 の `notebooklm.google.com` → `notebook.google.com` 移行（**サーバー側 301**、パス保持）では、旧ドメインは描画前に転送されるため `matches` が旧ドメインのままの content script は一度も走らず、削除 UI もインポートパネルも F2-2 も同時に沈黙した（DOM セレクタは全て無傷だった。§8.9）。対象ホストは `src/types.ts` の **`SUPPORTED_HOSTS` が単一の真実**で、`manifest.config.ts` の `host_permissions` / `matches` と content の起動ガード（`isSupportedHost`）はそこから導出する —— 3 箇所にホスト名をハードコードするとズレが silent failure になる。ホスト判定は完全一致で行う（`evil-notebook.google.com` 等を弾く）。
 - **実機調査で DOM 前提が変わったら `docs/requirements.md` §8.x を更新する。** セレクタのコメントや設計判断は調査記録の節を根拠に引用するため、古い節（例: §8.5 は 2026-07-01 のテーブル前提で、カード/テーブルの2表示モードや切替でのコンテナ置換を含まない）を根拠に新コメントを書くと traceability の齟齬が出る（#67 レビューで顕在化）。新事実は該当節に追記するか、無ければ設計ドキュメント（`docs/superpowers/specs/`）を参照先にする。
 
 ### 配布制約
 
-- **ストア公開を見据えた制約**（`docs/requirements.md` §3.3）: 権限最小化（`host_permissions: notebooklm.google.com` のみ ——`manifest.config.ts` 参照）、外部ネットワーク送信ゼロ / トラッカー無し、日英 i18n。これらは維持すること。
+- **ストア公開を見据えた制約**（`docs/requirements.md` §3.3）: 権限最小化（`host_permissions` は `SUPPORTED_HOSTS` 由来の 2 ホストのみ ——`manifest.config.ts` 参照）、外部ネットワーク送信ゼロ / トラッカー無し、日英 i18n。これらは維持すること。
 
 ## Issue 作成
 

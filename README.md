@@ -4,7 +4,8 @@ Google NotebookLM（コンシューマ版）を便利にする Chrome 拡張機�
 
 NotebookLM の Web UI は大量のノートブックやソースを扱うときの操作コストが高い。本拡張はそうした繰り返し作業を一括化する。NotebookLM には公開 API が無いため、すべて **content script による DOM 自動化**（NotebookLM 自身の UI フローを自動操作）で実現している。
 
-対象は**コンシューマ版**（`https://notebooklm.google.com/`、無料 / Plus）。Enterprise 版は対象外。
+対象は**コンシューマ版**（`https://notebook.google.com/`、無料 / Plus）。Enterprise 版は対象外。
+2026-08-08 に `notebooklm.google.com` から `notebook.google.com`（表示名「Gemini Notebook」）へ移行したため、拡張は新旧両ドメインに対応する。
 
 ## 機能
 
@@ -27,7 +28,7 @@ npm run build   # dist/ を生成
 1. Chrome で `chrome://extensions` を開く
 2. 「デベロッパー モード」を ON
 3. 「パッケージ化されていない拡張機能を読み込む」→ `dist/` を選択
-4. `https://notebooklm.google.com/` を開くと、一覧に選択 UI が表示される
+4. `https://notebook.google.com/` を開くと、一覧に選択 UI が表示される
 
 ## 開発
 
@@ -41,7 +42,7 @@ npm run typecheck  # tsc --noEmit（strict）
 
 ## プライバシー
 
-- 権限は `host_permissions: notebooklm.google.com` のみ（最小化）
+- 権限は `host_permissions: notebook.google.com` + 旧 `notebooklm.google.com` のみ（最小化）
 - 外部ネットワーク送信ゼロ・トラッカー無し（すべて端末内で完結）
 - ネットワーク通信は NotebookLM への操作のみ
 

@@ -1,3 +1,17 @@
+// 対象サービスのホスト。2026-08-08、NotebookLM は notebook.google.com（ブランド名
+// 「Gemini Notebook」）へ移行し、旧 notebooklm.google.com は同一パスへ 301 恒久リダイレクト
+// するようになった。旧ドメインでは content script が走る前にリダイレクトされるため実質
+// 死んでいるが、ロールバックや段階ロールアウトに備えて両方を維持する（manifest の
+// host_permissions / matches もこの2つと一致させること）。先頭が現行ドメイン＝
+// NOTEBOOK_HOME の生成元。
+export const SUPPORTED_HOSTS = ['notebook.google.com', 'notebooklm.google.com'] as const
+
+// content / background 共通のホスト判定。前方・後方一致ではなく完全一致で見る
+// （`notebook.google.com.evil.test` や `evil-notebook.google.com` を弾くため）。
+export function isSupportedHost(hostname: string): boolean {
+  return (SUPPORTED_HOSTS as readonly string[]).includes(hostname)
+}
+
 export interface RowIdentity {
   title: string
 }

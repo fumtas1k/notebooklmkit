@@ -17,7 +17,8 @@ Google NotebookLM（コンシューマ版）を便利にする Chrome 拡張機�
 
 - **対象ユーザー**: NotebookLM をヘビーに使う個人（リサーチ、学習、情報整理など）。
 - **対象ブラウザ**: Google Chrome（Manifest V3）。将来的に Chromium 系（Edge / Brave）も視野。
-- **対象サービス**: コンシューマ版 NotebookLM（`https://notebooklm.google.com/`）。
+- **対象サービス**: コンシューマ版 NotebookLM / Gemini Notebook（`https://notebook.google.com/`。
+  旧 `https://notebooklm.google.com/` は 301 リダイレクト。§8.9）。
   無料 / Plus を想定。**Enterprise 版は対象外**（別 API を持つため）。
 
 ## 3. 重要な前提・技術方針
@@ -63,7 +64,7 @@ Google NotebookLM（コンシューマ版）を便利にする Chrome 拡張機�
 **受け入れ基準（Phase 1）**
 - 一覧で任意の複数ノートブックを選択し、一括削除できる。
 - 削除中に NotebookLM の DOM 構造が想定外でも、クラッシュせずエラーを通知して停止する。
-- 拡張の権限は `host_permissions: notebooklm.google.com` を中心に最小限であること。
+- 拡張の権限は `host_permissions: notebook.google.com`（+ 旧 `notebooklm.google.com`）を中心に最小限であること。
 
 ### Phase 2 — インポート機能
 
@@ -121,7 +122,7 @@ Phase 1（一覧の一括削除）に必要な実 DOM を確認済み。UI 更�
 - **Angular Material 製**。`mdc-*` / `mat-*` は比較的安定、`ng-tns-*` / `_ngcontent-*` は動的生成のため**依存しない**。
 - ノートブックは内部的に「**project**」と呼ばれる。
 
-### ノートブック一覧（`https://notebooklm.google.com/`）
+### ノートブック一覧（`https://notebook.google.com/`。調査当時は `notebooklm.google.com`。§8.9）
 - 一覧はテーブル: `div.all-projects-container > div.my-projects-container > project-table > table.project-table > tbody > tr[mat-row][role=row]`。
 - テーブルは2つ存在（`project-table` ×2。最近／その他などのグループ）。
 - 各行 `tr` のカラム:
@@ -246,6 +247,40 @@ Phase 2（URL / タブ一括インポート）で使うソース追加フロー�
 - **削除フローは表と同一**: カードの3点メニューを開くと deleter が使う削除項目
   `.cdk-overlay-container button.mat-mdc-menu-item.delete-button`（テキスト「削除」）が同じく現れる
   → `deleter` は無改造でカードにも適用できる。
+
+## 8.9 ドメイン移行: notebooklm.google.com → notebook.google.com（2026-08-08 実機確認）
+
+NotebookLM が **`notebook.google.com`** へ移行し、ブランド表示も「**Gemini Notebook**」に変わった
+（`<title>` / ダイアログ文言 / フッターとも "Gemini Notebook"）。
+
+### 事実
+- `https://notebooklm.google.com/` → **301 恒久リダイレクト** → `https://notebook.google.com/`。
+  パスは保持される（`/notebook/<ID>` → `https://notebook.google.com/notebook/<ID>`）。
+  `curl -o /dev/null -w '%{http_code} -> %{redirect_url}'` で確認。
+- **DOM は無変更**。§8.5 / §8.6 / §8.7 / §8.8 のセレクタはすべて新ドメインでそのまま通る。
+  実機測定（カード表示・356 行）:
+  - `project-button.project-button` 356 / `span.project-button-title` 356
+  - `project-action-button button.project-button-more` 327（残り 29 はおすすめ = Reader 行。§8.5 と同じ内訳）
+  - チェックボックス注入先（`div.project-button-box` と直接子 `project-action-button`）327 / 327
+  - observer 対象 `welcome-page` あり、`.all-projects-container` あり、`button.create-new-button` あり
+  - ノートブックページ: パスは `/notebook/<ID>` のまま、`button.add-source-button`（aria-label「ソースを追加」）あり、
+    ソース追加ダイアログの「ウェブサイト」チップ → `textarea[formcontrolname="urls"]` → 「挿入」ボタン、
+    Studio の `.create-artifact-button-container`（音声解説）もすべて健在。
+
+### 影響（この移行だけで全機能が停止した）
+リダイレクトは**サーバー側 301** なので、旧ドメインではページが描画される前に転送される
+＝ `matches: ['https://notebooklm.google.com/*']` の content script は**一度も注入されない**。
+その結果、削除チェックボックス / アクションバー / インポートパネルが一切出ず、F2-2 も
+background が旧ドメインでタブを開くだけで content 側の作成処理が走らない（1分後に badge `!`）。
+
+### 設計への示唆
+- 対象ホストは `src/types.ts` の **`SUPPORTED_HOSTS` を単一の真実**にし、`manifest.config.ts` の
+  `host_permissions` / `content_scripts[].matches` と content の起動ガード（`isSupportedHost`）を
+  そこから導出する。従来はこの3箇所に文字列がハードコードされていて、ズレが silent failure になった。
+- 新旧**両ドメインを保持**する（旧は 301 で実質死んでいるが、段階ロールアウト / ロールバックに耐えるため）。
+- ホスト判定は完全一致で行う（`notebook.google.com.evil.test` / `evil-notebook.google.com` を弾く）。
+- **「UI が壊れた」ときはまず DOM を疑う前に URL を疑う。** セレクタが1つ残らず外れているように
+  見えるときは、そもそも content script が動いていない可能性が高い。
 
 ## 9. スコープ外（当面）
 

@@ -7,7 +7,7 @@ import {
 } from './selectors'
 import {
   makeTarget, type NotebookTarget, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type PendingCreate,
-  MAIN_WORLD_CLICK_MESSAGE, CLICK_TARGET_ATTR,
+  MAIN_WORLD_CLICK_MESSAGE, CLICK_TARGET_ATTR, isSupportedHost,
 } from '../types'
 import { SelectionStore } from './selection'
 import { detectLang, createT } from './i18n'
@@ -439,12 +439,12 @@ export function start(
 }
 
 // content script として読み込まれたときだけ自動起動。
-// テスト(jsdom)では location.hostname が notebooklm.google.com にならないため
+// テスト(jsdom)では location.hostname が SUPPORTED_HOSTS に入らないため
 // import しても副作用は発生しない。
 if (
   typeof document !== 'undefined' &&
   typeof location !== 'undefined' &&
-  location.hostname === 'notebooklm.google.com'
+  isSupportedHost(location.hostname)
 ) {
   start()
 }
