@@ -4,7 +4,9 @@ import type { waitFor as WaitFor } from './dom-utils'
 export interface DeleterDeps {
   findRow(t: NotebookTarget): HTMLElement | null
   getMoreButton(row: HTMLElement): HTMLElement | null
-  getDeleteMenuItem(): HTMLElement | null
+  // 押したトリガー（3点メニューボタン）が開いたメニューの「削除」項目。他の行のメニューの項目を
+  // 返さないこと（#94）。
+  getDeleteMenuItem(trigger: HTMLElement): HTMLElement | null
   getConfirmDialog(): HTMLElement | null
   getConfirmDeleteButton(dialog: HTMLElement): HTMLElement | null
   click(el: HTMLElement): void
@@ -60,6 +62,13 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
     if (attempt > 1 && target.id && deps.findRow(target) !== row) {
       throw new Error('target row could not be re-identified on retry (outcome unknown)')
     }
+    // 確認ダイアログは本文に対象のタイトルも ID も出さない（§8.14）ので、内容からは誰のものか
+    // 判別できない。「開始時点で確認ダイアログが無い」ことを確かめ、以降に現れたものを自分が開いた
+    // ものとして扱う（#94）。既に開いているなら由来が分からないので押さずに止まる。
+    // 直前の件のダイアログが閉じ切っていないだけのこともある（行が先に消える）ので、消えるのは待つ。
+    await w(() => (deps.getConfirmDialog() ? null : true), { timeout }).catch(() => {
+      throw new Error('a confirm dialog is already open (unknown origin)')
+    })
     // ② 操作メニューを開く
     const more = deps.getMoreButton(row)
     if (!more) throw new Error('more button not found')
@@ -67,7 +76,7 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
     // ③ メニューの「削除」
     let del: HTMLElement
     try {
-      del = await w(() => deps.getDeleteMenuItem(), { timeout })
+      del = await w(() => deps.getDeleteMenuItem(more), { timeout })
     } catch (err) {
       // 「削除」項目の無いメニュー（削除権限の無い行など）を開いたまま止まらない（#88）。
       // 閉じ損ねても停止理由は元のタイムアウトのまま返す。
@@ -78,14 +87,24 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
     // ④ 確認ダイアログの Delete ボタン。
     // mat-dialog-container は先に描画され、中の Delete ボタンは少し遅れて現れるため、
     // ダイアログ容器ではなく「ボタン自体」の出現を待つ（同期取得だと null になる）。
+    // 最初に見えたダイアログのノードに束縛する。ボタンを掴む前にそのダイアログが消えたり別の
+    // ノードに替わったりしたら、後から在るものは自分が開いたものではないので止まる（#94）。
+    let boundDialog: HTMLElement | null = null
     const confirm = await w(() => {
       const dialog = deps.getConfirmDialog()
-      return dialog ? deps.getConfirmDeleteButton(dialog) : null
+      if (dialog !== boundDialog && boundDialog) throw new Error('confirm dialog was closed or replaced')
+      if (!dialog) return null
+      boundDialog = dialog
+      return deps.getConfirmDeleteButton(dialog)
     }, { timeout })
     // ④' 出現＝操作可能ではない。ここで待たずに押すと、ダイアログは閉じるのに
     // 削除は実行されない（§8.11 / #82）。待つべき DOM シグナルが無いため固定待機。
     await sleep(settleMs)
-    deps.click(confirm)
+    // 行動時点で再確認する: 待機中にダイアログが閉じられていたら、掴んだボタンはもう押すべきものでは
+    // ない（その後に別のダイアログが開いていても、それは自分が開いたものではない。#94）。
+    // 押さなかった場合もそのまま ⑤ へ進む: 利用者が自分で確定していれば行は消えるので完了、
+    // 消えなければ通常どおり再試行 / 失敗になる。
+    if (confirm.isConnected) deps.click(confirm)
     // ⑤ 削除した行ノード自身が DOM から外れるまで待つ。
     // title で再検索すると同名の別行を拾い続けて誤タイムアウトするため、掴んだ行を見る。
     try {
@@ -102,7 +121,7 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
       // 再特定できなければ押さずに止まる（#87）。
       if (attempt >= maxAttempts) break
       // 次の試行で ② の3点メニューを押せるよう、ダイアログが引くのを待つ。
-      // 閉じきらなくても続行はするので失敗は握りつぶす。
+      // 閉じきらなかった場合は、次の試行の入口（確認ダイアログが無いことの確認）で停止する。
       await w(() => (deps.getConfirmDialog() ? null : true), { timeout }).catch(() => {})
     }
   }
