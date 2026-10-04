@@ -45,8 +45,13 @@ work_real="$(cd "$work" && pwd -P)"
 # --no-cache: 既定では共有している node_modules/.vite に結果キャッシュを書く。止めて、元の作業
 # ツリーを書き換えない / 並行する別セッションのテストと競合しないようにする
 # （vitest 1.6 は --cache.dir が廃止済みで、置き場所だけを変える CLI オプションが無い）。
+# 色を止め、残った ANSI エスケープも落とす。下の判定は行頭の `Tests` / `FAIL` を見るので、色コードが
+# 付くと（FORCE_COLOR=1 や CI=true の環境）本当の失敗を「実行不能」と誤判定する。
 run_tests() {
-  (cd "$work" && npx --no-install vitest run --no-cache "$@" >"$work/.mutation-out" 2>&1)
+  local rc=0
+  (cd "$work" && NO_COLOR=1 FORCE_COLOR=0 npx --no-install vitest run --no-cache "$@" >"$work/.mutation-raw" 2>&1) || rc=$?
+  perl -pe 's/\e\[[0-9;]*[A-Za-z]//g' "$work/.mutation-raw" >"$work/.mutation-out"
+  return "$rc"
 }
 summary() { grep -E '^[[:space:]]*Tests ' "$work/.mutation-out" | tr -s ' ' | sed 's/^ //' || true; }
 # 「失敗」と数えられたテストがあるか。非ゼロ終了だけでは、テストが捕まえたのか実行できなかった
