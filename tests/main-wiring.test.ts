@@ -652,6 +652,16 @@ ${['A', 'B', 'C', 'D'].map((title) => `
       /^(Stopped: 1 deleted \/ 2 not processed|中断しました: 成功 1件 \/ 残り 2件は未処理)$/,
     )
   })
+
+  // 現行の deleteNotebooks は「中断」と「失敗」を同時には返さないが、分岐の優先順位
+  // （利用者の中断が失敗より先）は固定しておく。deleter が将来併発を返しても順序が退行しない。
+  it('prefers the abortedSummary when the result is both aborted and failed', async () => {
+    vi.mocked(deleteNotebooks).mockResolvedValue({
+      succeeded: ['title:A'], failed: [{ key: 'title:B', reason: 'x' }], aborted: true,
+    })
+    const text = await deleteFirstThree()
+    expect(text).toMatch(/^(Stopped: 1 deleted \/ 1 not processed|中断しました: 成功 1件 \/ 残り 1件は未処理)$/)
+  })
 })
 
 // issue #28: Angular のインターポレーション更新（{{title}}）は既存テキストノードの
