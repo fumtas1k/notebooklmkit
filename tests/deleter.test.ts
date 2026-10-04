@@ -3,6 +3,18 @@ import { deleteNotebooks, type DeleterDeps } from '../src/content/deleter'
 import { waitFor } from '../src/content/dom-utils'
 import { makeTarget, type NotebookTarget } from '../src/types'
 
+// 実 DOM の確認ダイアログは、開いている間ずっと同じノードで、開き直すと別ノードになる。
+// deleter は最初に見たダイアログのノードに束縛する（#94）ので、フェイクも同じ性質にする
+// （呼ぶたびに新しいノードを返すフェイクだと「差し替えられた」と誤判定され、実挙動と乖離する）。
+function dialogFake() {
+  let node: HTMLElement | null = null
+  return (open: boolean): HTMLElement | null => {
+    if (!open) { node = null; return null }
+    return (node ??= document.createElement('div'))
+  }
+}
+const dlg = dialogFake()
+
 // 削除対象の世界を実 DOM ノードで表現するフェイク world。
 // row.isConnected を実際の DOM 接続状態として検証できるようにする。
 function makeWorld(titles: string[]) {
@@ -24,7 +36,7 @@ function makeWorld(titles: string[]) {
     findRow: (t) => firstRow(t.title),
     getMoreButton: (row) => { const b = el('more'); (b as any)._row = row; return b },
     getDeleteMenuItem: () => (menuRow ? el('delete') : null),
-    getConfirmDialog: () => (dialogRow ? el('dialog') : null),
+    getConfirmDialog: () => dlg(dialogRow != null),
     getConfirmDeleteButton: () => el('confirm'),
     click: (e) => {
       const name = e.dataset.name
@@ -87,7 +99,7 @@ describe('deleteNotebooks', () => {
       // confirm: 何もしない（行を残したまま）
     }
     deps.getDeleteMenuItem = () => (menuOpen ? document.createElement('div') : null)
-    deps.getConfirmDialog = () => (dialogOpen ? document.createElement('div') : null)
+    deps.getConfirmDialog = () => dlg(dialogOpen)
     const res = await deleteNotebooks(targets('A', 'B'), deps, {})
     expect(res.succeeded.length).toBe(0)
     expect(res.failed.length).toBe(1) // 最初の失敗で停止
@@ -168,7 +180,7 @@ describe('confirm click settling and retry', () => {
       }
     }
     deps.getDeleteMenuItem = () => (menuOpen ? named('delete') : null)
-    deps.getConfirmDialog = () => (dialogOpen ? named('dialog') : null)
+    deps.getConfirmDialog = () => dlg(dialogOpen)
     deps.getConfirmDeleteButton = () => named('confirm')
 
     const res = await deleteNotebooks(targets('A'), deps, {})
@@ -188,7 +200,7 @@ describe('confirm click settling and retry', () => {
       else if (name === 'confirm') { confirmClicks++; dialogOpen = false } // 行は永久に消えない
     }
     deps.getDeleteMenuItem = () => (menuOpen ? named('delete') : null)
-    deps.getConfirmDialog = () => (dialogOpen ? named('dialog') : null)
+    deps.getConfirmDialog = () => dlg(dialogOpen)
     deps.getConfirmDeleteButton = () => named('confirm')
     deps.maxAttempts = 3
 
@@ -215,7 +227,7 @@ describe('confirm click settling and retry', () => {
       else if (name === 'confirm') { confirmClicks++; dialogOpen = false } // 行は消えない
     }
     deps.getDeleteMenuItem = () => (menuOpen ? named('delete') : null)
-    deps.getConfirmDialog = () => (dialogOpen ? named('dialog') : null)
+    deps.getConfirmDialog = () => dlg(dialogOpen)
     deps.getConfirmDeleteButton = () => named('confirm')
     deps.maxAttempts = 3
 
@@ -243,7 +255,7 @@ describe('confirm click settling and retry', () => {
       }
     }
     deps.getDeleteMenuItem = () => (menuOpen ? named('delete') : null)
-    deps.getConfirmDialog = () => (dialogOpen ? named('dialog') : null)
+    deps.getConfirmDialog = () => dlg(dialogOpen)
     deps.getConfirmDeleteButton = () => named('confirm')
 
     const res = await deleteNotebooks(targets('X'), deps, {})
@@ -287,7 +299,7 @@ describe('retry identity check for id-keyed targets (#87)', () => {
       else if (name === 'confirm') { state.confirmClicks++; dialogOpen = false }
     }
     deps.getDeleteMenuItem = () => (menuOpen ? named('delete') : null)
-    deps.getConfirmDialog = () => (dialogOpen ? named('dialog') : null)
+    deps.getConfirmDialog = () => dlg(dialogOpen)
     deps.getConfirmDeleteButton = () => named('confirm')
     return state
   }
@@ -415,5 +427,69 @@ describe('binds the menu and the confirm dialog to the target row (#94)', () => 
     expect(clicks).not.toContain('confirm')
     expect(res.failed.length).toBe(1)
     expect(container.children.length).toBe(1)
+  })
+
+  // 確定ボタンを掴む前にダイアログが差し替わった（自分のを閉じられ、別の行の削除確認が開かれた）。
+  // 後から現れたダイアログは自分が開いたものではないので、そのボタンを押さない（codex P1）。
+  it('stops without confirming when the dialog is replaced before its button is found', async () => {
+    const { deps, container } = makeWorld(['A'])
+    const clicks: string[] = []
+    const realClick = deps.click
+    deps.click = (e) => { clicks.push(e.dataset.name ?? ''); realClick(e) }
+    const first = document.createElement('div'), second = document.createElement('div')
+    let opened = false, polls = 0
+    deps.click = (e) => { clicks.push(e.dataset.name ?? ''); if (e.dataset.name === 'delete') opened = true; else realClick(e) }
+    // 1 回目のポーリングは自分のダイアログ（ボタン未描画）、2 回目以降は別のダイアログ
+    deps.getConfirmDialog = () => (!opened ? null : polls++ === 0 ? first : second)
+    const realGetBtn = deps.getConfirmDeleteButton
+    deps.getConfirmDeleteButton = (d) => (d === first ? null : realGetBtn(d))
+    const res = await deleteNotebooks(targets('A'), deps, {})
+    expect(clicks).not.toContain('confirm')
+    expect(res.failed.length).toBe(1)
+    expect(container.children.length).toBe(1)
+  })
+
+  // 前の件の削除が成立して行は消えたが、そのダイアログがまだ閉じ切っていない。由来不明として
+  // 即停止せず、閉じるのを待ってから次の件に進む（codex P2）。
+  it('waits for the previous confirm dialog to finish closing before starting the next target', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
+    let menuRow: HTMLElement | null = null, dialogOpen = false
+    const mk = (name: string) => { const e = document.createElement('div'); e.dataset.name = name; document.body.appendChild(e); return e }
+    deps.getMoreButton = (row) => { const b = mk('more'); (b as any)._row = row; return b }
+    deps.click = (e) => {
+      const name = e.dataset.name
+      if (name === 'more') menuRow = (e as any)._row
+      else if (name === 'delete') dialogOpen = true
+      else if (name === 'confirm') {
+        menuRow?.remove(); menuRow = null
+        setTimeout(() => { dialogOpen = false }, 120)   // 行が先に消え、ダイアログは遅れて閉じる
+      }
+    }
+    deps.getDeleteMenuItem = () => (menuRow && !dialogOpen ? mk('delete') : null)
+    deps.getConfirmDialog = () => dlg(dialogOpen)
+    deps.getConfirmDeleteButton = () => mk('confirm')
+    deps.timeout = 1000
+    const res = await deleteNotebooks(targets('A', 'B'), deps, {})
+    expect(res.failed).toEqual([])
+    expect(res.succeeded.length).toBe(2)
+    expect(container.children.length).toBe(0)
+  })
+
+  // 最終試行で確定ボタンが外れていても、行が消えていれば（利用者が自分で確定した等）成功として扱う。
+  it('reports success on the last attempt when the row is gone even though the confirm button was detached', async () => {
+    const { deps, container } = makeWorld(['A'])
+    const row = container.children[0] as HTMLElement
+    let confirmEl: HTMLElement | null = null
+    const realGetBtn = deps.getConfirmDeleteButton
+    deps.getConfirmDeleteButton = (d) => (confirmEl = realGetBtn(d))
+    const clicks: string[] = []
+    const realClick = deps.click
+    deps.click = (e) => { clicks.push(e.dataset.name ?? ''); realClick(e) }
+    deps.delay = async () => { confirmEl?.remove(); row.remove() }
+    deps.maxAttempts = 1
+    const res = await deleteNotebooks(targets('A'), deps, {})
+    expect(clicks).not.toContain('confirm')
+    expect(res.succeeded).toEqual(['title:A'])
+    expect(res.failed).toEqual([])
   })
 })
