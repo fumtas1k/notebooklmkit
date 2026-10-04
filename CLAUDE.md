@@ -24,6 +24,11 @@ npx vitest run -t "aborts"             # 名前指定で単一テスト
 
 ビルドした拡張機能の読み込み: `npm run build` 後、`chrome://extensions` →「パッケージ化されていない拡張機能を読み込む」→ `dist/` を選択。手動 E2E 手順は `docs/e2e-checklist-phase1.md` にある（削除は取り消し不可のため、破棄してよいノートブックを用意すること）。
 
+**git worktree で作業するときの癖:**
+- 新しい worktree には `node_modules` が無い。そのまま `npx vitest` を叩くとインストール確認のプロンプトで固まる（出力なしでタイムアウトする）ので、先に `npm ci` を実行し、`npx` は `--no-install` を付ける。
+- `dist/` は worktree ごとに別物。Chrome に読み込んでいる拡張が別のチェックアウトの `dist/` を指していると、再読込しても修正は反映されない。実機確認を頼むときは**どのパスの `dist/` をビルドしたか**を伝える。
+- `gh pr merge --delete-branch` は、`main` が別の worktree でチェックアウト済みだとローカルの切替で `fatal: 'main' is already used by worktree` を出す。マージ自体は成立しているので `gh pr view <n> --json state` で確認すればよい。
+
 ## アーキテクチャ
 
 content script（`src/content/`）と background service worker（`src/background/main.ts`）で構成される（popup はまだ無い）。壊れやすい部分とテスト可能なロジックを意図的に分離する設計。background は当初「タブ列挙のみ」だったが、F2-2 で役割が増えた: (1) 同一ウィンドウのタブ URL 列挙（`nlk:list-tabs`）、(2) ツールバーアイコン `chrome.action.onClicked` を起点に新規作成タブを開き `pendingCreate` を storage 保存、(3) 作成の進捗をタブ別バッジ（`…`/`✓`/`!`）で表示し、`chrome.alarms` で `…` 固着を検知するウォッチドッグ（MV3 SW のアイドル終了に耐える。issue #47）、(4) 音声解説タイルを主ワールドで実クリックする `chrome.scripting.executeScript({ world:'MAIN' })`（隔離ワールドの合成イベントは Angular Material タイルに効かないため。§8.7）。使用権限は `tabs` / `storage` / `alarms` / `scripting`（`manifest.config.ts`。用途は各行コメント参照。`storage` / `alarms` / `scripting` は F2-2、`tabs` は F2-1 用）。
@@ -73,7 +78,10 @@ content script（`src/content/`）と background service worker（`src/backgroun
 - **クリックが効かないとき「イベントが届いていない」と決めつけない。** #82 ではイベントは実際に届いており（ダイアログは閉じた）、届いた先の状態が未完成だった。§8.7 の「隔離ワールドの合成イベントが効かない」と症状が似ているため主ワールド化（`executeScript({world:'MAIN'})`）に飛びつきたくなるが、**待機時間だけを変えた対照実験**で切り分けるのが先。実際 #82 は主ワールドでも即クリックなら再現し、隔離ワールドは無関係だった。
 - **確認ダイアログの「確定」ボタン取得は、取り違えの事故が非対称であることを前提に設計する。** 掴み損ねると `waitFor` タイムアウトで安全停止する（ユーザーも「モーダルが開いたまま止まる」と気付ける）が、**キャンセル側を掴むと削除が無言で no-op** になり、行が消えないまま deleter が待ち続ける。そこで「キャンセル系テキストは何があっても返さない」を候補集合の絞り込みで先に効かせ、その上で 安定クラス → テキスト**完全一致** の順に探す。前方一致は「削除しない」「Delete all」等を拾うので使わない。該当なしは推測せず `null`（＝安全停止）。2026-08-08 の UI 刷新で `primary-button`/`tertiary-button` → `yes-button`/`no-button` に変わり実際に停止した（§8.10 / #81）。
 - **UI が「全部」壊れたときは DOM ではなく URL を疑う。** セレクタが1つ残らず外れているように見える／注入 UI が一切出ないときは、そもそも content script が注入されていない可能性が高い。2026-08-08 の `notebooklm.google.com` → `notebook.google.com` 移行（**サーバー側 301**、パス保持）では、旧ドメインは描画前に転送されるため `matches` が旧ドメインのままの content script は一度も走らず、削除 UI もインポートパネルも F2-2 も同時に沈黙した（DOM セレクタは全て無傷だった。§8.9）。対象ホストは `src/types.ts` の **`SUPPORTED_HOSTS` が単一の真実**で、`manifest.config.ts` の `host_permissions` / `matches` と content の起動ガード（`isSupportedHost`）はそこから導出する —— 3 箇所にホスト名をハードコードするとズレが silent failure になる。ホスト判定は完全一致で行う（`evil-notebook.google.com` 等を弾く）。
+- **UI 刷新の報告を受けたら、報告された機能だけでなく全機能を実機で点検する。** NotebookLM の刷新は複数箇所を同時に変える。#89 では「新規作成に進まない」の報告を受けて作成フローだけ直し、同じ刷新で一括削除（チェックボックスが 1 つも出ない）とインポートも壊れていたことは利用者の指摘で初めて気付いた。点検対象は最低限: 一覧のチェックボックス注入（グリッド / リスト両方、おすすめ行に出ないこと）、3点メニュー → 削除項目 → 確認ダイアログ（キャンセルで閉じる）、作成ボタン → ソース種別 → URL 欄 → 挿入、ノートブックページの「ソースを追加」。`scripts/bundle-selectors.sh` で `selectors.ts` を単体バンドルし実ページで評価すると、再ビルド・再読込なしで判定件数を測れる。
+- **「実機で確認した」と報告するときは、何で確認したかを書き分ける。** (1) 修正後と同じ判定ロジックをページ内スクリプトとして評価した、(2) ビルドした拡張を読み込んで操作した、は別物。(1) は DOM 判定の正しさは示せるが、content script の注入・配線・CSS・background 連携は通っていない。拡張の再読込や削除の確定はこちらからできないので、(2) は利用者に依頼し、依頼時は直近の変更で**再確認が必要な項目だけ**を具体的に挙げる。
 - **実機調査で DOM 前提が変わったら `docs/requirements.md` §8.x を更新する。** セレクタのコメントや設計判断は調査記録の節を根拠に引用するため、古い節（例: §8.5 は 2026-07-01 のテーブル前提で、カード/テーブルの2表示モードや切替でのコンテナ置換を含まない）を根拠に新コメントを書くと traceability の齟齬が出る（#67 レビューで顕在化）。新事実は該当節に追記するか、無ければ設計ドキュメント（`docs/superpowers/specs/`）を参照先にする。
+- **`docs/requirements.md` の §8.x は §9 の前（直前の §8.n の後ろ）に追記する。** ファイル末尾は §10 なので、末尾に足すと §10 の後ろに §8.n が来る（#89 で発生）。追記後に `grep -n '^## ' docs/requirements.md` で見出し順を確認する。
 
 ### 配布制約
 
@@ -91,6 +99,7 @@ content script（`src/content/`）と background service worker（`src/backgroun
 - **機能ステータス / アーキテクチャに影響する実装 PR では CLAUDE.md も同じ PR で更新する。** フェーズ実装状況（概要の「実装済み / 未実装」）、モジュール構成、background の役割、権限の用途などに変化があれば、その PR で CLAUDE.md の該当記述も直す。散文の更新を後回しにすると数スプリントで陳腐化し、古い記述を根拠に新コメントを書いて誤りが伝播する（#69/#70 で監査による一括修正が必要になった）。
 - **stacked PR の base を `--delete-branch` で squash マージすると、上段 PR は main に retarget されず自動クローズする**（reopen 不可）。回避策: (1) スタックせず独立ブランチにする、または (2) 上段を先に `gh pr edit <上段> --base main` で main に retarget してから下段を `--delete-branch` でマージする。復旧: 上段の固有コミットを `git rebase --onto origin/main <旧base先端>`（`<旧base先端>` ＝マージ前の下段ブランチ先端）で main に載せ替え → `git push --force-with-lease` → main 向けに**新規 PR** を作成（旧 PR には新 PR への案内コメントを残す）。
 - **破壊的機能（削除など）に触れる PR は、マージ前に外部レビューを1回通す。** `codex exec review --base main`（`--base` とカスタムプロンプトは併用不可なので、観点を渡したいときは `codex exec "<prompt>"` の汎用形式にする）。#82 ではこれで TOCTOU による過剰削除の P1 を1件拾えた。自分で TDD＋実機検証を済ませていても、破壊的操作の安全性主張は独立した目で確認する価値がある。
+- **codex が使えない（利用制限等）ときは、サブエージェントによる独立レビューで代替する。** 読み取りとテスト実行のみに限定し、観点（誤削除の経路 / silent failure / テストと実 DOM の乖離 / 古い記述）と、確認済みと推測を分けて返すことを指示する。**レビュー後に破壊的機能へ変更を足したら、その差分でもう一度通す** —— #89 では 1 回目のレビュー後に行の識別をタイトルから ID に変えたため 2 回通し、2 回目で observer が ID 属性の変化を見ていない点などを拾えた。対応しない指摘は issue 化する。
 - **マージ後は post-merge-retro ルーチンを回す**（振り返り→CLAUDE.md/scripts/skills 改善提案→承認で PR）。セッション内 `gh pr merge` ならフックが自動リマインドする（GitHub UI マージは対象外なので手動実行）。
 
 ## 計画ドキュメント
