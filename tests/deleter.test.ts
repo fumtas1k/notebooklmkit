@@ -349,6 +349,68 @@ describe('retry identity check for id-keyed targets (#87)', () => {
     expect(state.confirmClicks).toBe(2)
     expect(res.failed.length).toBe(1)
   })
+
+  // #110: 再試行は「確認ダイアログが無くなるのを待つ」await を挟んでからメニューを押す。同一性の確認が
+  // その待機より前にあると、待機中にノードが再利用されたとき別のノートブックのメニューを開く。
+  // 前の試行のダイアログが閉じ切らずに残り、再試行の待機の最中に閉じる世界を作る:
+  //   0ms 確定クリック（無言で失敗・ダイアログは残る）→ 400ms 行の消滅待ちがタイムアウト
+  //   → 800ms ダイアログが引くのを待つのもタイムアウト → 再試行の入口（まだ同一）→ 待機
+  //   → 1000ms ダイアログが閉じる。同時に onClose で対象 ID の行が変わる。
+  function lingeringDialogOnRetry(deps: DeleterDeps, onClose: () => void) {
+    const state = { moreClicks: 0, confirmClicks: 0 }
+    let menuOpen = false, dialogOpen = false
+    deps.timeout = 400
+    deps.click = (e) => {
+      const name = e.dataset.name
+      if (name === 'more') { state.moreClicks++; menuOpen = true }
+      else if (name === 'delete') { dialogOpen = true; menuOpen = false }
+      else if (name === 'confirm') {
+        state.confirmClicks++
+        setTimeout(() => { dialogOpen = false; onClose() }, 1000)
+      }
+    }
+    deps.getDeleteMenuItem = () => (menuOpen ? named('delete') : null)
+    deps.getConfirmDialog = () => dlg(dialogOpen)
+    deps.getConfirmDeleteButton = () => named('confirm')
+    return state
+  }
+
+  it('stops without clicking when the id moves to another node while waiting for the previous dialog to close', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
+    const held = container.children[0] as HTMLElement
+    const other = container.children[1] as HTMLElement
+    let current: HTMLElement | null = held
+    const state = lingeringDialogOnRetry(deps, () => { current = other })
+    deps.findRow = () => current
+
+    const res = await deleteNotebooks([makeTarget({ title: 'A', id: 'id-a' })], deps, {})
+    expect(res.succeeded).toEqual([])
+    expect(res.failed.length).toBe(1)
+    expect(res.failed[0].reason).toMatch(/re-identified/)
+    // 再試行のメニューも確認も押していない
+    expect(state.moreClicks).toBe(1)
+    expect(state.confirmClicks).toBe(1)
+    expect(container.children.length).toBe(2)
+  })
+
+  it('stops as outcome-unknown when the target stops resolving while waiting for the previous dialog to close', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
+    const held = container.children[0] as HTMLElement
+    let current: HTMLElement | null = held
+    const state = lingeringDialogOnRetry(deps, () => { current = null })
+    deps.findRow = (t) => (t.id === 'id-a' ? current : (container.children[1] as HTMLElement))
+
+    const res = await deleteNotebooks(
+      [makeTarget({ title: 'A', id: 'id-a' }), makeTarget({ title: 'B', id: 'id-b' })], deps, {})
+    expect(res.succeeded).toEqual([])
+    expect(res.failed.length).toBe(1)
+    expect(res.failed[0].key).toBe('id:id-a')
+    expect(res.failed[0].reason).toMatch(/re-identified/)
+    // 再試行も、次の対象 B への着手もしていない
+    expect(state.moreClicks).toBe(1)
+    expect(state.confirmClicks).toBe(1)
+    expect(container.children.length).toBe(2)
+  })
 })
 
 // #88: 「削除」項目が出ない行（削除権限の無いノートブック等）を掴むとタイムアウトで

@@ -50,18 +50,6 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
     // 前の試行が遅れて成立していれば完了。二度押ししない。
     // 「タイムアウト = 拒否」ではないため、各試行の入口で必ず確認する。
     if (!row.isConnected) return
-    // 掴んだノードが生きていても、Angular が別のノートブックへ再利用していれば isConnected は
-    // true のまま（#87）。ID キーは一意なので、再試行の入口で「その ID の行が今もこのノードか」を
-    // 確認し、そう言い切れなければ押さずに止まる。引き直したノードは操作しない（確認だけ）ので、
-    // ① の方針と両立する。タイトルキーは同名の先頭行が返り得るため適用しない。確認から ② の
-    // クリックまでは同期。
-    // findRow の null は「削除された」とは限らない（ID 一致に加えて削除可能行であることも条件で、
-    // 再描画中は一時的に引けない）。成功扱いにすると未削除のまま次の対象へ進むため、別ノードの
-    // 場合と同じく結果不明として停止する（前の試行が実は成立していても失敗として報告される。
-    // 安全側の誤報）。
-    if (attempt > 1 && target.id && deps.findRow(target) !== row) {
-      throw new Error('target row could not be re-identified on retry (outcome unknown)')
-    }
     // 確認ダイアログは本文に対象のタイトルも ID も出さない（§8.14）ので、内容からは誰のものか
     // 判別できない。「開始時点で確認ダイアログが無い」ことを確かめ、以降に現れたものを自分が開いた
     // ものとして扱う（#94）。既に開いているなら由来が分からないので押さずに止まる。
@@ -69,6 +57,19 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
     await w(() => (deps.getConfirmDialog() ? null : true), { timeout }).catch(() => {
       throw new Error('a confirm dialog is already open (unknown origin)')
     })
+    // 掴んだノードが生きていても、Angular が別のノートブックへ再利用していれば isConnected は
+    // true のまま（#87）。ID キーは一意なので、再試行では「その ID の行が今もこのノードか」を
+    // 確認し、そう言い切れなければ押さずに止まる。引き直したノードは操作しない（確認だけ）ので、
+    // ① の方針と両立する。タイトルキーは同名の先頭行が返り得るため適用しない。
+    // 確認は上の待機の**後**に置く: 待機は最長 timeout まで伸び、その間にノードが再利用され得る
+    // （#110）。ここから ② のクリックまでは同期（間に await を足さないこと）。
+    // findRow の null は「削除された」とは限らない（ID 一致に加えて削除可能行であることも条件で、
+    // 再描画中は一時的に引けない）。成功扱いにすると未削除のまま次の対象へ進むため、別ノードの
+    // 場合と同じく結果不明として停止する（前の試行が実は成立していても失敗として報告される。
+    // 安全側の誤報）。
+    if (attempt > 1 && target.id && deps.findRow(target) !== row) {
+      throw new Error('target row could not be re-identified on retry (outcome unknown)')
+    }
     // ② 操作メニューを開く
     const more = deps.getMoreButton(row)
     if (!more) throw new Error('more button not found')
@@ -117,8 +118,8 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
       if (!row.isConnected) return
       // ここに来る = 掴んだノードがまだ接続されている。現行 DOM では削除で行ノードが外れるので、
       // ④' の待機でも足りず「閉じただけ」だった可能性が高い。ただしノードが別ノートブックに
-      // 再利用される DOM ではそう言い切れないため、ID キーなら次の試行の入口で同一性を確認し、
-      // 再特定できなければ押さずに止まる（#87）。
+      // 再利用される DOM ではそう言い切れないため、ID キーなら次の試行でメニューを押す直前に
+      // 同一性を確認し、再特定できなければ押さずに止まる（#87 / #110）。
       if (attempt >= maxAttempts) break
       // 次の試行で ② の3点メニューを押せるよう、ダイアログが引くのを待つ。
       // 閉じきらなかった場合は、次の試行の入口（確認ダイアログが無いことの確認）で停止する。
