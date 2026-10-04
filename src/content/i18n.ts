@@ -13,6 +13,7 @@ const EN = {
   progress: 'Deleting {done} / {total}…',
   doneSummary: 'Done: {ok} succeeded / {ng} failed',
   abortedSummary: 'Stopped: {ok} deleted / {rest} not processed',
+  failedSummary: 'Stopped on failure: {ok} deleted / {ng} failed / {rest} not processed',
   abort: 'Stop',
   domError: 'Stopped: NotebookLM UI structure did not match expectations',
   selectionChanged: 'Cancelled: the notebooks to delete changed while the confirmation dialog was open',
@@ -29,7 +30,7 @@ const EN = {
   importProgress: 'Importing {done} / {total}…',
   importBatchProgress: 'Adding {count} URLs at once…',
   importDone: 'Done: {ok} imported / {ng} failed',
-  importFailedSummary: 'Stopped: {ok} imported / {ng} failed / {rest} not processed',
+  importFailedSummary: 'Stopped on failure: {ok} imported / {ng} failed / {rest} not processed',
   importAborted: 'Stopped: {ok} imported / {rest} not processed',
 } as const
 
@@ -50,6 +51,7 @@ const MESSAGES: Record<Lang, Record<MsgKey, string>> = {
     progress: '{done} / {total} 削除中…',
     doneSummary: '完了: 成功 {ok}件 / 失敗 {ng}件',
     abortedSummary: '中断しました: 成功 {ok}件 / 残り {rest}件は未処理',
+    failedSummary: '失敗のため停止: 成功 {ok}件 / 失敗 {ng}件 / 残り {rest}件は未処理',
     abort: '中断',
     domError: 'NotebookLM の画面構造が想定と異なるため中断しました',
     selectionChanged: '確認ダイアログ表示中に削除対象の一覧が変わったため中止しました',
@@ -66,7 +68,7 @@ const MESSAGES: Record<Lang, Record<MsgKey, string>> = {
     importProgress: '{done} / {total} インポート中…',
     importBatchProgress: '{count} 件を一括追加中…',
     importDone: '完了: 成功 {ok}件 / 失敗 {ng}件',
-    importFailedSummary: '中断: 成功 {ok}件 / 失敗 {ng}件 / 残り {rest}件は未処理',
+    importFailedSummary: '失敗のため停止: 成功 {ok}件 / 失敗 {ng}件 / 残り {rest}件は未処理',
     importAborted: '中断しました: 成功 {ok}件 / 残り {rest}件は未処理',
   },
 }

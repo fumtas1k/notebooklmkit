@@ -548,6 +548,122 @@ describe('runDelete error recovery', () => {
   })
 })
 
+// issue #99: deleteNotebooks は最初の失敗で停止する（安全側）が、そのとき aborted は
+// false（aborted は利用者の「中断」ボタン専用）。doneSummary をそのまま出すと
+// 「完了: 成功 0件 / 失敗 1件」となり、残りが未処理であること・途中で止まったことが
+// 伝わらない。失敗ありのときは未処理件数つきの failedSummary を出す。
+describe('runDelete summary (issue #99)', () => {
+  // 4 行中 3 行を選ぶ: 全選択ではなく 10 件未満なので通常の確認ダイアログ
+  // （confirm-ok が即押せる）になる。
+  const FOUR_ROWS = `
+<div class="all-projects-container"><project-table><table class="project-table"><tbody>
+${['A', 'B', 'C', 'D'].map((title) => `
+  <tr mat-row role="row"><td class="title-column"><span class="project-table-title">${title}</span></td>
+    <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>`).join('')}
+</tbody></table></project-table></div>`
+
+  beforeEach(() => {
+    vi.mocked(deleteNotebooks).mockReset()
+    document.body.innerHTML = ''
+  })
+
+  // 先頭 3 行を選択 → 削除 → 確認ダイアログを確定し、進捗表示のテキストを返す。
+  async function deleteFirstThree(): Promise<string> {
+    // 行は detached root に置く（他テストが残した observer と競合させないため。
+    // 上の error recovery テストと同じ理由）。
+    const root = document.createElement('div')
+    root.innerHTML = FOUR_ROWS
+    const dispose = init(root)
+    const boxes = [...root.querySelectorAll<HTMLInputElement>(`[${CHECKBOX_ATTR}] input, input[${CHECKBOX_ATTR}]`)]
+    expect(boxes).toHaveLength(4)
+    for (const box of boxes.slice(0, 3)) {
+      box.checked = true
+      box.dispatchEvent(new Event('change'))
+    }
+
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.click()
+    const okBtn = document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')
+    expect(okBtn).not.toBeNull()
+    expect(okBtn!.disabled).toBe(false)
+    okBtn!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(vi.mocked(deleteNotebooks)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(deleteNotebooks).mock.calls[0][0]).toHaveLength(3)
+    const text = document.querySelector('[data-nlk="bar-progress"]')!.textContent ?? ''
+    dispose()
+    return text
+  }
+
+  it('shows the failedSummary with the unprocessed count when the run stopped on a failure', async () => {
+    const failed = [{ key: 'title:A', reason: 'row did not disappear' }]
+    vi.mocked(deleteNotebooks).mockResolvedValue({ succeeded: [], failed, aborted: false })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const text = await deleteFirstThree()
+
+    // 3 件選択・1 件目で失敗 → 成功 0 / 失敗 1 / 残り 2。
+    expect(text).toMatch(
+      /^(Stopped on failure: 0 deleted \/ 1 failed \/ 2 not processed|失敗のため停止: 成功 0件 \/ 失敗 1件 \/ 残り 2件は未処理)$/,
+    )
+    expect(text).not.toMatch(/^完了|^Done/)
+    // 停止理由は画面に出さず、コンソールに残す。
+    expect(warnSpy).toHaveBeenCalledWith('notebooklmkit: delete stopped', failed)
+    warnSpy.mockRestore()
+  })
+
+  it('counts the already-deleted ones when it stopped on a later item', async () => {
+    vi.mocked(deleteNotebooks).mockResolvedValue({
+      succeeded: ['title:A'],
+      failed: [{ key: 'title:B', reason: 'timeout' }],
+      aborted: false,
+    })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const text = await deleteFirstThree()
+
+    expect(text).toMatch(
+      /^(Stopped on failure: 1 deleted \/ 1 failed \/ 1 not processed|失敗のため停止: 成功 1件 \/ 失敗 1件 \/ 残り 1件は未処理)$/,
+    )
+    warnSpy.mockRestore()
+  })
+
+  it('keeps the doneSummary when everything succeeded', async () => {
+    vi.mocked(deleteNotebooks).mockResolvedValue({
+      succeeded: ['title:A', 'title:B', 'title:C'],
+      failed: [],
+      aborted: false,
+    })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const text = await deleteFirstThree()
+
+    expect(text).toMatch(/^(Done: 3 succeeded \/ 0 failed|完了: 成功 3件 \/ 失敗 0件)$/)
+    expect(warnSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it('keeps the abortedSummary when the user stopped the run', async () => {
+    vi.mocked(deleteNotebooks).mockResolvedValue({ succeeded: ['title:A'], failed: [], aborted: true })
+
+    const text = await deleteFirstThree()
+
+    expect(text).toMatch(
+      /^(Stopped: 1 deleted \/ 2 not processed|中断しました: 成功 1件 \/ 残り 2件は未処理)$/,
+    )
+  })
+
+  // 現行の deleteNotebooks は「中断」と「失敗」を同時には返さないが、分岐の優先順位
+  // （利用者の中断が失敗より先）は固定しておく。deleter が将来併発を返しても順序が退行しない。
+  it('prefers the abortedSummary when the result is both aborted and failed', async () => {
+    vi.mocked(deleteNotebooks).mockResolvedValue({
+      succeeded: ['title:A'], failed: [{ key: 'title:B', reason: 'x' }], aborted: true,
+    })
+    const text = await deleteFirstThree()
+    expect(text).toMatch(/^(Stopped: 1 deleted \/ 1 not processed|中断しました: 成功 1件 \/ 残り 1件は未処理)$/)
+  })
+})
+
 // issue #28: Angular のインターポレーション更新（{{title}}）は既存テキストノードの
 // nodeValue を書き換えるだけで childList レコードを出さない。characterData を
 // 監視しないと、リネームフロー（メニュー/ダイアログは監視対象コンテナ外の
