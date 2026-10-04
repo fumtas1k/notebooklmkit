@@ -37,6 +37,12 @@ describe('i18n', () => {
     expect(en('importFailedSummary', { ok: 1, ng: 1, rest: 2 })).toContain('2')
   })
 
+  it('formats the delete failed summary in both languages (issue #99)', () => {
+    const vars = { ok: 0, ng: 1, rest: 19 }
+    expect(createT('en')('failedSummary', vars)).toBe('Stopped: 0 deleted / 1 failed / 19 not processed')
+    expect(createT('ja')('failedSummary', vars)).toBe('中断: 成功 0件 / 失敗 1件 / 残り 19件は未処理')
+  })
+
   it('formats the batch import progress in both languages', () => {
     expect(createT('en')('importBatchProgress', { count: 5 })).toBe('Adding 5 URLs at once…')
     expect(createT('ja')('importBatchProgress', { count: 5 })).toBe('5 件を一括追加中…')

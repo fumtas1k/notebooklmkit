@@ -184,11 +184,22 @@ export function init(root: ParentNode = document): () => void {
           signal: ac.signal,
           onProgress: (p) => bar.setProgress(t('progress', { done: p.completed, total: p.total })),
         })
+        // 外側の ok（確認ダイアログの結果）と紛れないよう、件数は別名で持つ。
+        const okCount = result.succeeded.length
+        const ngCount = result.failed.length
+        const rest = targets.length - okCount - ngCount
         if (result.aborted) {
-          const rest = targets.length - result.succeeded.length - result.failed.length
-          bar.setProgress(t('abortedSummary', { ok: result.succeeded.length, rest }))
+          bar.setProgress(t('abortedSummary', { ok: okCount, rest }))
+        } else if (ngCount > 0) {
+          // deleteNotebooks は最初の失敗で停止する（安全側）が、aborted は利用者の
+          // 「中断」専用で false のまま。doneSummary（「完了」）だと残りが未処理である
+          // こと・途中で止まったことが伝わらないため、未処理件数つきで表示する（issue #99）。
+          // 停止理由（reason）は内部向けの英語メッセージなので画面には出さず、
+          // 調査用にコンソールへ残す。
+          console.warn('notebooklmkit: delete stopped', result.failed)
+          bar.setProgress(t('failedSummary', { ok: okCount, ng: ngCount, rest }))
         } else {
-          bar.setProgress(t('doneSummary', { ok: result.succeeded.length, ng: result.failed.length }))
+          bar.setProgress(t('doneSummary', { ok: okCount, ng: ngCount }))
         }
         // 成功分のみ選択解除。1回の emit に畳む（1件ずつ store.set すると emit ごとに
         // action-bar の件数再計算 buildTargets（O(行数)）が走り、解除件数分の重複スキャン
