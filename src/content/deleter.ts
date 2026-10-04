@@ -8,6 +8,8 @@ export interface DeleterDeps {
   getConfirmDialog(): HTMLElement | null
   getConfirmDeleteButton(dialog: HTMLElement): HTMLElement | null
   click(el: HTMLElement): void
+  // 「削除」項目が出ずに停止するとき、開いた3点メニューを閉じる（#88）。best-effort。
+  closeMenu?(): void
   waitFor: typeof WaitFor
   timeout?: number
   // 確認ダイアログの「削除」ボタンを見つけてから押すまでの待機（§8.11 / #82）。
@@ -46,12 +48,32 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
     // 前の試行が遅れて成立していれば完了。二度押ししない。
     // 「タイムアウト = 拒否」ではないため、各試行の入口で必ず確認する。
     if (!row.isConnected) return
+    // 掴んだノードが生きていても、Angular が別のノートブックへ再利用していれば isConnected は
+    // true のまま（#87）。ID キーは一意なので、再試行の入口で「その ID の行が今もこのノードか」を
+    // 確認し、そう言い切れなければ押さずに止まる。引き直したノードは操作しない（確認だけ）ので、
+    // ① の方針と両立する。タイトルキーは同名の先頭行が返り得るため適用しない。確認から ② の
+    // クリックまでは同期。
+    // findRow の null は「削除された」とは限らない（ID 一致に加えて削除可能行であることも条件で、
+    // 再描画中は一時的に引けない）。成功扱いにすると未削除のまま次の対象へ進むため、別ノードの
+    // 場合と同じく結果不明として停止する（前の試行が実は成立していても失敗として報告される。
+    // 安全側の誤報）。
+    if (attempt > 1 && target.id && deps.findRow(target) !== row) {
+      throw new Error('target row could not be re-identified on retry (outcome unknown)')
+    }
     // ② 操作メニューを開く
     const more = deps.getMoreButton(row)
     if (!more) throw new Error('more button not found')
     deps.click(more)
     // ③ メニューの「削除」
-    const del = await w(() => deps.getDeleteMenuItem(), { timeout })
+    let del: HTMLElement
+    try {
+      del = await w(() => deps.getDeleteMenuItem(), { timeout })
+    } catch (err) {
+      // 「削除」項目の無いメニュー（削除権限の無い行など）を開いたまま止まらない（#88）。
+      // 閉じ損ねても停止理由は元のタイムアウトのまま返す。
+      try { deps.closeMenu?.() } catch { /* best-effort */ }
+      throw err
+    }
     deps.click(del)
     // ④ 確認ダイアログの Delete ボタン。
     // mat-dialog-container は先に描画され、中の Delete ボタンは少し遅れて現れるため、
@@ -74,8 +96,10 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
       // 消滅待ちはタイムアウトしたが、その後に反映が届いていれば削除は成立している。
       // 「タイムアウト = 拒否」と決めつけない（#82 codex P1）。
       if (!row.isConnected) return
-      // ここに来る = ④' の待機でも足りず「閉じただけ」だった。掴んだ行が生きている
-      // ＝ この行は消えていないので、同じノードに対してやり直しても二重削除にならない。
+      // ここに来る = 掴んだノードがまだ接続されている。現行 DOM では削除で行ノードが外れるので、
+      // ④' の待機でも足りず「閉じただけ」だった可能性が高い。ただしノードが別ノートブックに
+      // 再利用される DOM ではそう言い切れないため、ID キーなら次の試行の入口で同一性を確認し、
+      // 再特定できなければ押さずに止まる（#87）。
       if (attempt >= maxAttempts) break
       // 次の試行で ② の3点メニューを押せるよう、ダイアログが引くのを待つ。
       // 閉じきらなくても続行はするので失敗は握りつぶす。
