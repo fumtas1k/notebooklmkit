@@ -505,6 +505,15 @@ describe('getDeleteMenuItemFor', () => {
     expect(getDeleteMenuItemFor(trigger('a'))).toBeNull()
   })
 
+  // 行の再描画でトリガーが DOM から外れると、aria-expanded / aria-controls が古い値のまま残り得る。
+  it('returns null for a trigger that is no longer connected, even if its stale attributes still match', () => {
+    document.body.innerHTML = page(
+      '<button id="a" aria-expanded="true" aria-controls="mat-menu-panel-2"></button>', PANEL('mat-menu-panel-2'))
+    const a = trigger('a')
+    a.remove()
+    expect(getDeleteMenuItemFor(a)).toBeNull()
+  })
+
   it('returns null when aria-controls is missing or points nowhere (no guessing)', () => {
     document.body.innerHTML = page(
       '<button id="a" aria-expanded="true"></button><button id="b" aria-expanded="true" aria-controls="gone"></button>',

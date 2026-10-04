@@ -179,6 +179,8 @@ export function getListObserveTarget(root: ParentNode = document): HTMLElement |
 // aria-controls="mat-menu-panel-N" を持ち、パネルは id="mat-menu-panel-N"。閉じると
 // aria-expanded="false" に戻り aria-controls は外れる。対応が取れなければ推測せず null（＝安全停止）。
 export function getDeleteMenuItemFor(trigger: HTMLElement): HTMLElement | null {
+  // 行の再描画で外れたトリガーには古い aria-expanded / aria-controls が残り得るので、接続も見る。
+  if (!trigger.isConnected) return null
   if (trigger.getAttribute('aria-expanded') !== 'true') return null
   const panelId = trigger.getAttribute('aria-controls')
   if (!panelId) return null

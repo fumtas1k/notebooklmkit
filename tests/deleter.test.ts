@@ -435,7 +435,6 @@ describe('binds the menu and the confirm dialog to the target row (#94)', () => 
     const { deps, container } = makeWorld(['A'])
     const clicks: string[] = []
     const realClick = deps.click
-    deps.click = (e) => { clicks.push(e.dataset.name ?? ''); realClick(e) }
     const first = document.createElement('div'), second = document.createElement('div')
     let opened = false, polls = 0
     deps.click = (e) => { clicks.push(e.dataset.name ?? ''); if (e.dataset.name === 'delete') opened = true; else realClick(e) }
@@ -446,6 +445,30 @@ describe('binds the menu and the confirm dialog to the target row (#94)', () => 
     const res = await deleteNotebooks(targets('A'), deps, {})
     expect(clicks).not.toContain('confirm')
     expect(res.failed.length).toBe(1)
+    expect(container.children.length).toBe(1)
+  })
+
+  // 自分のダイアログが閉じられ、しばらく何も無い状態を挟んでから別のダイアログが開いた場合も同じ。
+  // 「ノード → 無し」の時点で止まり、後から現れたものに束縛し直さない。
+  it('stops when its dialog disappears before the button is found, and never binds to a later one', async () => {
+    const { deps, container } = makeWorld(['A'])
+    const clicks: string[] = []
+    const realClick = deps.click
+    const first = document.createElement('div'), second = document.createElement('div')
+    let opened = false, polls = 0
+    deps.click = (e) => { clicks.push(e.dataset.name ?? ''); if (e.dataset.name === 'delete') opened = true; else realClick(e) }
+    // 1 回目: 自分のダイアログ（ボタン未描画）/ 2 回目: 無し / 3 回目以降: 別のダイアログ
+    deps.getConfirmDialog = () => {
+      if (!opened) return null
+      const n = polls++
+      return n === 0 ? first : n === 1 ? null : second
+    }
+    const realGetBtn = deps.getConfirmDeleteButton
+    deps.getConfirmDeleteButton = (d) => (d === first ? null : realGetBtn(d))
+    const res = await deleteNotebooks(targets('A'), deps, {})
+    expect(clicks).not.toContain('confirm')
+    expect(res.failed.length).toBe(1)
+    expect(res.failed[0].reason).toMatch(/closed or replaced/)
     expect(container.children.length).toBe(1)
   })
 
