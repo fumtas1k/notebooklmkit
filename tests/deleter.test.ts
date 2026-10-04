@@ -512,6 +512,8 @@ describe('first-attempt identity check for id-keyed targets (#113)', () => {
     expect(res.succeeded).toEqual([])
     expect(res.failed.length).toBe(1)
     expect(res.failed[0].key).toBe('id:id-a')
+    // ダイアログは閉じている。行を引けなかったことが理由で、由来不明ダイアログとは報告しない。
+    expect(res.failed[0].reason).not.toMatch(/already open/)
     expect(container.children.length).toBe(2)
   })
 
@@ -526,6 +528,82 @@ describe('first-attempt identity check for id-keyed targets (#113)', () => {
     expect(res.failed.length).toBe(1)
     expect(res.failed[0].reason).toMatch(/already open/)
     expect(container.children.length).toBe(1)
+  })
+
+  // 確認とクリックの間に await が無いことを固定する。行を引いた述語が値を返した直後（waitFor の
+  // resolve が呼び出し側に届く前）に一覧を書き換える。クリックが述語の中にあれば、押した時点で
+  // その ID の行は押したノードのまま。await の後ろで押す実装だと、書き換えの後に押すことになる。
+  it('clicks the menu inside the same synchronous block that resolved the row (nothing can run in between)', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
+    const original = container.children[0] as HTMLElement
+    const other = container.children[1] as HTMLElement
+    let current: HTMLElement = original
+    deps.findRow = () => current
+    let waits = 0
+    deps.waitFor = ((fn: () => unknown, opts?: Parameters<typeof waitFor>[1]) => {
+      const first = ++waits === 1
+      return waitFor(() => {
+        const v = fn()
+        if (first && v) current = other   // 述語が行を返した直後に、対象 ID が別ノードへ移る
+        return v
+      }, opts)
+    }) as typeof waitFor
+    const atClick: { row: HTMLElement; idRow: HTMLElement }[] = []
+    const realClick = deps.click
+    deps.click = (e) => {
+      if (e.dataset.name === 'more') atClick.push({ row: (e as any)._row, idRow: current })
+      realClick(e)
+    }
+
+    const res = await deleteNotebooks([idA()], deps, {})
+    // 押した瞬間、その ID の行は押したノードだった
+    expect(atClick).toEqual([{ row: original, idRow: original }])
+    expect(res.succeeded).toEqual(['id:id-a'])
+    expect(original.isConnected).toBe(false)
+    expect(other.isConnected).toBe(true)
+  })
+
+  // 押した直後から findRow が別ノードを返しても、完了判定（消滅待ち）と再試行は押したノードを見る。
+  // 押した後に引き直す実装だと、別ノードの消滅を待ってタイムアウトし、再試行でそのノードを消す。
+  it('tracks the node it clicked for completion, even if the id resolves elsewhere right after the click', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
+    const original = container.children[0] as HTMLElement
+    const other = container.children[1] as HTMLElement
+    let current: HTMLElement = original
+    deps.findRow = () => current
+    const moreRows: HTMLElement[] = []
+    const realClick = deps.click
+    deps.click = (e) => {
+      realClick(e)
+      if (e.dataset.name === 'more') { moreRows.push((e as any)._row); current = other }
+    }
+
+    const res = await deleteNotebooks([idA()], deps, {})
+    expect(moreRows).toEqual([original])
+    expect(original.isConnected).toBe(false)
+    expect(other.isConnected).toBe(true)
+    expect(res.succeeded).toEqual(['id:id-a'])
+    expect(res.failed).toEqual([])
+  })
+
+  // タイトルキーは新しい経路を通らない: 一度だけ引き、確認ダイアログの消滅を待ってから、掴んだノードを
+  // 押す。待機中にそのノードが別のノートブックへ再利用されても気付けない（既知の残存リスク。ID を
+  // 取れない DOM でだけ起きる。タイトルは一意でなく、同一性を確かめる手段が無い）。
+  it('title-keyed targets keep the old path: resolve once, wait for the dialog, then click the held node', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
+    const original = container.children[0] as HTMLElement
+    const other = container.children[1] as HTMLElement
+    let current: HTMLElement = original
+    const order: string[] = []
+    const state = lingeringDialogAtStart(deps, () => { order.push('dialog-closed'); current = other })
+    deps.findRow = () => { order.push('findRow'); return current }
+
+    const res = await deleteNotebooks(targets('A'), deps, {})
+    // 行の特定はダイアログ消滅待ちの前に一度だけ。引き直さない。
+    expect(order).toEqual(['findRow', 'dialog-closed'])
+    expect(state.moreRows).toEqual([original])
+    expect(res.succeeded).toEqual(['title:A'])
+    expect(other.isConnected).toBe(true)
   })
 
   // この対象に対して一度でも押した後は引き直さない（#82）。1 回目に押したノードだけを操作し続ける。

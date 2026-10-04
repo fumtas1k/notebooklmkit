@@ -75,6 +75,10 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
     opened = first.more
   } else {
     // タイトルキーは一意でないので、同一性の確認も掴み直しもしない。一度だけ引く。
+    // **既知の残存リスク（#113）**: このあとループ内で確認ダイアログの消滅を待ってから押すので、
+    // 待機中に掴んだノードが別のノートブックへ再利用されても気付かずにそのメニューを押す。
+    // タイトルでは「いまもこのノードか」を確かめる手段が無い（引き直すと同名の別行を拾い得る）。
+    // ID を取れない DOM でだけ起きる（2026-10-04 時点は全行から ID を取得できる。§8.14）。
     row = await w(() => deps.findRow(target), { timeout })
   }
 
