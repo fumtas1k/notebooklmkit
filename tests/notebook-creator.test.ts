@@ -1,10 +1,14 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   createNotebookWithUrls, triggerAudioOverview,
   type CreatorDeps, type AudioOverviewDeps,
 } from '../src/content/notebook-creator'
+import { waitFor } from '../src/content/dom-utils'
 
-// waitFor の代役: fn() が truthy ならそれを返し、falsy なら「タイムアウト」で投げる。
+// waitFor の代役: fn() を 1 回だけ評価し、truthy ならそれを返し、falsy なら「タイムアウト」で投げる。
+// ポーリングも signal も再現しない（「最初から在る / 最後まで無い」の 2 枝しか作れない）。
+// 「途中で状態が変わる」「中断」は下の「with the real waitFor」の describe で、実 waitFor ＋
+// フェイクタイマーを使って検証する（#45）。
 const fakeWaitFor = (async (fn: () => unknown) => {
   const v = fn()
   if (v) return v
@@ -60,12 +64,152 @@ describe('createNotebookWithUrls', () => {
     expect(ok).toBe(false)
   })
 
-  it('waits for the submit button to become enabled', async () => {
+  // 「無効→有効に変わったら押す」側は下の実 waitFor の describe で検証する。
+  it('returns false without clicking submit when the submit button stays disabled', async () => {
     const disabled = { disabled: true } as unknown as HTMLElement
     const d = makeDeps({ getSubmitButton: () => disabled })
     const ok = await createNotebookWithUrls(['https://a/'], d)
     // disabled のままなら submit 待ちがタイムアウト → false
     expect(ok).toBe(false)
+    expect(d.clicks).not.toContain(disabled)
+  })
+})
+
+// #45: 実 waitFor ＋フェイクタイマーで、ポーリング（途中で状態が変わる）と中断を再現する。
+describe('createNotebookWithUrls with the real waitFor (polling / abort)', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  const TIMEOUT = 1000
+
+  // 状態をテストから書き換えられるよう、挿入ボタンとダイアログは可変の素オブジェクトにする。
+  function makePollingDeps(init: { submitDisabled?: boolean; submitPresent?: boolean } = {}) {
+    const state = { submitPresent: init.submitPresent ?? true }
+    const submit = { disabled: init.submitDisabled ?? false }
+    const dialog = { isConnected: true }
+    const submitEl = submit as unknown as HTMLElement
+    const d = makeDeps({
+      getSourceDialog: () => dialog as unknown as HTMLElement,
+      getSubmitButton: () => (state.submitPresent ? submitEl : null),
+      waitFor,
+      timeout: TIMEOUT,
+    })
+    return { d, state, submit, dialog, submitEl }
+  }
+
+  it('clicks submit only after it turns from disabled to enabled', async () => {
+    const { d, submit, dialog, submitEl } = makePollingDeps({ submitDisabled: true })
+    const p = createNotebookWithUrls(['https://a/'], d)
+    await vi.advanceTimersByTimeAsync(300)
+    // ④ まで進んで（URL は入力済み）、無効の間は押さずに待っている
+    expect(d.inputs).toHaveLength(1)
+    expect(d.clicks).not.toContain(submitEl)
+
+    submit.disabled = false
+    await vi.advanceTimersByTimeAsync(100)
+    expect(d.clicks[d.clicks.length - 1]).toBe(submitEl)
+
+    dialog.isConnected = false
+    await vi.advanceTimersByTimeAsync(100)
+    await expect(p).resolves.toBe(true)
+  })
+
+  it('clicks submit once it appears late', async () => {
+    const { d, state, dialog, submitEl } = makePollingDeps({ submitPresent: false })
+    const p = createNotebookWithUrls(['https://a/'], d)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(d.clicks).not.toContain(submitEl)
+
+    state.submitPresent = true
+    dialog.isConnected = false
+    await vi.advanceTimersByTimeAsync(100)
+    expect(d.clicks[d.clicks.length - 1]).toBe(submitEl)
+    await expect(p).resolves.toBe(true)
+  })
+
+  it('times out (false) without clicking submit when it never becomes enabled', async () => {
+    const { d, submitEl } = makePollingDeps({ submitDisabled: true })
+    const p = createNotebookWithUrls(['https://a/'], d)
+    await vi.advanceTimersByTimeAsync(TIMEOUT - 100)
+    let settled = false
+    void p.then(() => { settled = true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(settled).toBe(false)               // タイムアウトまでは待ち続ける
+    await vi.advanceTimersByTimeAsync(200)
+    await expect(p).resolves.toBe(false)
+    expect(d.clicks).not.toContain(submitEl)
+  })
+
+  it('waits for the dialog to disconnect after submit, and fails if it never does', async () => {
+    const { d, submitEl } = makePollingDeps()
+    const p = createNotebookWithUrls(['https://a/'], d)
+    await vi.advanceTimersByTimeAsync(TIMEOUT - 100)
+    expect(d.clicks[d.clicks.length - 1]).toBe(submitEl)
+    let settled = false
+    void p.then(() => { settled = true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(settled).toBe(false)               // ダイアログが残っている間は完了にしない
+    await vi.advanceTimersByTimeAsync(200)
+    await expect(p).resolves.toBe(false)
+  })
+
+  it('returns false without clicking anything when the signal is already aborted', async () => {
+    const { d } = makePollingDeps()
+    const ac = new AbortController()
+    ac.abort()
+    await expect(createNotebookWithUrls(['https://a/'], d, { signal: ac.signal })).resolves.toBe(false)
+    expect(d.clicks).toEqual([])
+    expect(d.inputs).toEqual([])
+  })
+
+  it('stops immediately on abort while waiting for submit, and never clicks it afterwards', async () => {
+    const { d, submit, submitEl } = makePollingDeps({ submitDisabled: true })
+    const ac = new AbortController()
+    const p = createNotebookWithUrls(['https://a/'], d, { signal: ac.signal })
+    await vi.advanceTimersByTimeAsync(300)
+    ac.abort()
+    // タイムアウトを待たず、中断の時点で false に確定する
+    await vi.advanceTimersByTimeAsync(0)
+    await expect(p).resolves.toBe(false)
+
+    // 中断後に有効化されても押さない
+    submit.disabled = false
+    await vi.advanceTimersByTimeAsync(TIMEOUT)
+    expect(d.clicks).not.toContain(submitEl)
+  })
+
+  // ⑤ の不変条件: 挿入クリック後（コミット後）の完了待ちは中断しない。中断で false を返すと、
+  // 実際には作られたノートブックを失敗と誤記録する。
+  it('ignores an abort after the submit click and still reports success', async () => {
+    const { d, dialog, submitEl } = makePollingDeps()
+    const ac = new AbortController()
+    const p = createNotebookWithUrls(['https://a/'], d, { signal: ac.signal })
+    await vi.advanceTimersByTimeAsync(300)
+    expect(d.clicks[d.clicks.length - 1]).toBe(submitEl)
+
+    ac.abort()
+    let settled = false
+    void p.then(() => { settled = true })
+    await vi.advanceTimersByTimeAsync(200)
+    expect(settled).toBe(false)               // 中断では確定しない
+
+    dialog.isConnected = false
+    await vi.advanceTimersByTimeAsync(100)
+    await expect(p).resolves.toBe(true)
+  })
+
+  it('passes the signal to every wait before the submit click, and not to the completion wait', async () => {
+    const { d, dialog } = makePollingDeps()
+    dialog.isConnected = false
+    const ac = new AbortController()
+    const seen: (AbortSignal | undefined)[] = []
+    d.waitFor = ((fn: () => unknown, opts: { signal?: AbortSignal } = {}) => {
+      seen.push(opts.signal)
+      return waitFor(fn, opts)
+    }) as CreatorDeps['waitFor']
+    await expect(createNotebookWithUrls(['https://a/'], d, { signal: ac.signal })).resolves.toBe(true)
+    // ①新規作成 ②ダイアログ+チップ ③URL 欄 ④挿入ボタン は signal つき、⑤完了待ちだけ無し
+    expect(seen).toEqual([ac.signal, ac.signal, ac.signal, ac.signal, undefined])
   })
 })
 
@@ -232,6 +376,80 @@ describe('triggerAudioOverview', () => {
     expect(ok).toBe(false)
     expect(d.clicks).toEqual([])
     expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+})
+
+// #45: 実 waitFor ＋フェイクタイマーで、タイル待ちのポーリングと中断を再現する。
+describe('triggerAudioOverview with the real waitFor (polling / abort)', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  function makeDisabledTile(): HTMLElement {
+    const tile = document.createElement('div')
+    tile.setAttribute('role', 'button')
+    tile.setAttribute('aria-label', '音声解説')
+    tile.setAttribute('aria-disabled', 'true')
+    return tile
+  }
+
+  it('clicks the tile only after it turns from aria-disabled to enabled', async () => {
+    const tile = makeDisabledTile()
+    const d = makeAudioDeps({ getAudioOverviewButton: () => tile, waitFor, timeout: 1000 })
+    d.isGenerating = () => d.clicks.length > 0   // クリックが効いて生成が始まる
+    const p = triggerAudioOverview(d)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(d.clicks).toEqual([])                 // 無効の間は押さない
+
+    tile.removeAttribute('aria-disabled')
+    await vi.advanceTimersByTimeAsync(100)
+    expect(d.clicks).toEqual([tile])
+
+    // カスタマイズダイアログは出ない（DIALOG_WAIT_MS で素通り）→ 生成開始を検知して成功
+    await vi.advanceTimersByTimeAsync(6000)
+    await expect(p).resolves.toBe(true)
+    expect(d.clicks).toEqual([tile])
+  })
+
+  it('stops immediately on abort while waiting for the tile, and never clicks it afterwards', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const tile = makeDisabledTile()
+    const ac = new AbortController()
+    const d = makeAudioDeps({ getAudioOverviewButton: () => tile, waitFor, timeout: 1000 })
+    const p = triggerAudioOverview(d, { signal: ac.signal })
+    await vi.advanceTimersByTimeAsync(2000)
+    ac.abort()
+    await vi.advanceTimersByTimeAsync(0)
+    await expect(p).resolves.toBe(false)
+
+    tile.removeAttribute('aria-disabled')
+    await vi.advanceTimersByTimeAsync(20000)
+    expect(d.clicks).toEqual([])
+    expect(warn).toHaveBeenCalledOnce()
+    warn.mockRestore()
+  })
+
+  it('does not start generating when aborted while waiting for the customize dialog', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const tile = document.createElement('div')
+    const gen = document.createElement('button')
+    let dialogOpen = false
+    const ac = new AbortController()
+    const d = makeAudioDeps({
+      getAudioOverviewButton: () => tile,
+      getAudioGenerateButton: () => (dialogOpen ? gen : null),
+      waitFor,
+      timeout: 1000,
+    })
+    const p = triggerAudioOverview(d, { signal: ac.signal })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(d.clicks).toEqual([tile])             // タイルは押してダイアログ待ち
+
+    ac.abort()
+    dialogOpen = true                            // 中断後にダイアログが出ても「生成」は押さない
+    await vi.advanceTimersByTimeAsync(60000)
+    await expect(p).resolves.toBe(false)
+    expect(d.clicks).toEqual([tile])
     warn.mockRestore()
   })
 })
