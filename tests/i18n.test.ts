@@ -37,10 +37,24 @@ describe('i18n', () => {
     expect(en('importFailedSummary', { ok: 1, ng: 1, rest: 2 })).toContain('2')
   })
 
+  // 失敗による停止は、利用者が止めたとき（「中断しました」/ "Stopped:"）と書き出しで区別できること。
+  it('words a failure stop differently from a user abort, for delete and import', () => {
+    for (const lang of ['en', 'ja'] as const) {
+      const t = createT(lang)
+      const vars = { ok: 1, ng: 1, rest: 2 }
+      const head = (s: string) => s.split(':')[0]
+      expect(head(t('failedSummary', vars))).not.toBe(head(t('abortedSummary', vars)))
+      expect(head(t('importFailedSummary', vars))).not.toBe(head(t('importAborted', vars)))
+      expect(head(t('importFailedSummary', vars))).toBe(head(t('failedSummary', vars)))
+    }
+    expect(createT('ja')('importFailedSummary', { ok: 1, ng: 1, rest: 2 }))
+      .toBe('失敗のため停止: 成功 1件 / 失敗 1件 / 残り 2件は未処理')
+  })
+
   it('formats the delete failed summary in both languages (issue #99)', () => {
     const vars = { ok: 0, ng: 1, rest: 19 }
-    expect(createT('en')('failedSummary', vars)).toBe('Stopped: 0 deleted / 1 failed / 19 not processed')
-    expect(createT('ja')('failedSummary', vars)).toBe('中断: 成功 0件 / 失敗 1件 / 残り 19件は未処理')
+    expect(createT('en')('failedSummary', vars)).toBe('Stopped on failure: 0 deleted / 1 failed / 19 not processed')
+    expect(createT('ja')('failedSummary', vars)).toBe('失敗のため停止: 成功 0件 / 失敗 1件 / 残り 19件は未処理')
   })
 
   it('formats the batch import progress in both languages', () => {

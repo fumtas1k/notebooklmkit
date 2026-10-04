@@ -604,7 +604,7 @@ ${['A', 'B', 'C', 'D'].map((title) => `
 
     // 3 件選択・1 件目で失敗 → 成功 0 / 失敗 1 / 残り 2。
     expect(text).toMatch(
-      /^(Stopped: 0 deleted \/ 1 failed \/ 2 not processed|中断: 成功 0件 \/ 失敗 1件 \/ 残り 2件は未処理)$/,
+      /^(Stopped on failure: 0 deleted \/ 1 failed \/ 2 not processed|失敗のため停止: 成功 0件 \/ 失敗 1件 \/ 残り 2件は未処理)$/,
     )
     expect(text).not.toMatch(/^完了|^Done/)
     // 停止理由は画面に出さず、コンソールに残す。
@@ -623,7 +623,7 @@ ${['A', 'B', 'C', 'D'].map((title) => `
     const text = await deleteFirstThree()
 
     expect(text).toMatch(
-      /^(Stopped: 1 deleted \/ 1 failed \/ 1 not processed|中断: 成功 1件 \/ 失敗 1件 \/ 残り 1件は未処理)$/,
+      /^(Stopped on failure: 1 deleted \/ 1 failed \/ 1 not processed|失敗のため停止: 成功 1件 \/ 失敗 1件 \/ 残り 1件は未処理)$/,
     )
     warnSpy.mockRestore()
   })
