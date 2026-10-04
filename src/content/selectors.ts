@@ -110,12 +110,24 @@ export function isDeletableRow(row: HTMLElement): boolean {
   return getMoreButton(row) != null && row.closest(SELECTORS.featuredSection) == null
 }
 
+// 選択・削除の対象にできる行か（= 削除可能 かつ 選択キーが空でない）。
+// 行挿入〜タイトル充填の間、ID も取れない行はキーが空（`title:`）になる。チェックボックス注入
+// （row-checkbox.ts）・「すべて選択」・対象確定・全選択判定の分母は、すべてこの同じ規則で
+// 空キーの行を外す（issue #33）。ID が取れていればキーは有効なので、タイトルが一時的に空でも
+// 通常の行として扱う（選択済みの行を無言で対象から落とさない）。
+export function isSelectableRow(row: HTMLElement): boolean {
+  if (!isDeletableRow(row)) return false
+  const { id, title } = getRowIdentity(row)
+  return Boolean(id) || title !== ''
+}
+
 // 削除対象の行を選択キーで引く（ID があれば ID、無ければタイトル。types.ts の makeTarget）。
 // ID で識別した対象を、タイトルが同じだけの別行に取り違えない。検索は削除可能な行に限定する:
 // おすすめ行にも 3点メニューが付いた（§8.14）ため、タイトルキーにフォールバックした場合、
 // 所有ノートブックと同名のおすすめ行が文書順で先にあると（グリッド表示はおすすめセクションが先）、
 // そちらを掴んで「削除」項目の無いメニューを開き、選択した行を消せないまま止まる。
-// 対象確定（buildTargets）と同じ集合から引く。
+// 対象確定（buildTargets）はさらにキーが空でない行（isSelectableRow）に絞る。こちらはキー一致で
+// 引くので、空キーの対象が来ない限り同じ集合になる。
 export function findDeletableRowByIdentity(id: RowIdentity, root: ParentNode = document): HTMLElement | null {
   const key = makeTarget(id).key
   return getNotebookRows(root).find((r) => isDeletableRow(r) && getRowKey(r) === key) ?? null

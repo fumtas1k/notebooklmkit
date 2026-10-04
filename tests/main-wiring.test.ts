@@ -397,7 +397,7 @@ describe('runDelete error recovery', () => {
     // 古いスナップショットのまま削除に進んではならない
     expect(deleteNotebooks).not.toHaveBeenCalled()
     const progress = document.querySelector('[data-nlk="bar-progress"]')
-    expect(progress!.textContent).toMatch(/選択が変更された|selection changed/)
+    expect(progress!.textContent).toMatch(/削除対象の一覧が変わった|notebooks to delete changed/)
 
     // 中止後は deleting フラグが解除され、再度削除を開始できる
     deleteBtn!.click()
@@ -684,6 +684,153 @@ describe('init with notebook ids (same-titled notebooks, §8.14)', () => {
     await tick()
     expect(a.getAttribute(CHECKBOX_ATTR)).toBe('id:id-c')
     expect(a.checked).toBe(false)
+    dispose()
+  })
+})
+
+// issue #33 / #34: 行挿入〜タイトル充填の間、ID も取れない行は選択キーが空（`title:`）になる。
+// 規則は 1 つ: 「キーが空の行」はチェックボックス注入・すべて選択・削除対象のどれにも入れない。
+// ID が取れていればキーは有効なので、タイトルが空でもすべての経路で通常の行として扱う。
+describe('rows whose title is not filled yet (#33 / #34)', () => {
+  const ROW = (title: string) => `
+  <tr mat-row role="row"><td class="title-column"><span class="project-table-title">${title}</span></td>
+    <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>`
+  const LIST_WITH_EMPTY = `
+<div class="all-projects-container"><project-table><table class="project-table"><tbody>
+  ${ROW('A')}${ROW('')}
+</tbody></table></project-table></div>`
+  const flush = () => new Promise((r) => setTimeout(r, 0))
+
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  it('select-all does not put the empty key into the store (count matches the checkboxes)', () => {
+    const root = document.createElement('div')
+    root.innerHTML = LIST_WITH_EMPTY
+    const dispose = init(root)
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-select-all"]')!.click()
+    expect(root.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(1)
+    expect(document.querySelector('[data-nlk="bar-count"]')!.textContent).toMatch(/1/)
+    dispose()
+  })
+
+  it('buildTargets never targets a row whose key is empty even if the empty key is in the store', () => {
+    document.body.innerHTML = LIST_WITH_EMPTY
+    const store = new SelectionStore()
+    store.set('title:', true)
+    store.set('title:A', true)
+    expect(buildTargets(store).map((t) => t.key)).toEqual(['title:A'])
+  })
+
+  // 除外するのは「キーが空になる行」だけ。ID が取れていればキーは有効なので、選択済みの行の
+  // タイトルが一時的に空になっても対象から無言で落とさない（codex P2）。
+  it('keeps a selected id-keyed row as a target even while its title is transiently empty', () => {
+    document.body.innerHTML = `
+<div class="all-projects-container"><project-table><table class="project-table"><tbody>
+  <tr mat-row role="row"><td class="title-column"><a class="project-table-title" href="/notebook/abc" title=""></a></td>
+    <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+</tbody></table></project-table></div>`
+    const store = new SelectionStore()
+    store.set('id:abc', true)
+    expect(buildTargets(store).map((t) => t.key)).toEqual(['id:abc'])
+  })
+
+  // 件数タイプ確認を既に経ている（10 件以上）なら、確認中に「選択 = 全件」へ変わっても中止しない。
+  // 中止するのは確認強度が 弱 → 強 に変わった場合だけ（codex P3）。
+  it('does not abort when select-all is reached after a strong confirm was already given', async () => {
+    vi.mocked(deleteNotebooks).mockClear()
+    vi.mocked(deleteNotebooks).mockResolvedValue({ succeeded: [], failed: [], aborted: false })
+    const root = document.createElement('div')
+    const names = Array.from({ length: 11 }, (_, i) => `N${i}`)
+    root.innerHTML = `<div class="all-projects-container"><project-table><table class="project-table"><tbody>${names.map(ROW).join('')}</tbody></table></project-table></div>`
+    const dispose = init(root)
+    const boxes = root.querySelectorAll<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
+    for (let i = 0; i < 10; i++) { boxes[i].checked = true; boxes[i].dispatchEvent(new Event('change')) }
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.click()
+    const input = document.querySelector<HTMLInputElement>('[data-nlk="confirm-dialog"] input')!
+    input.value = '10'
+    input.dispatchEvent(new Event('input'))
+    // 未選択の 1 件が消えて「選択 = 全件」になる
+    root.querySelectorAll('tr[mat-row]')[10].remove()
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.click()
+    await flush()
+    expect(deleteNotebooks).toHaveBeenCalledTimes(1)
+    dispose()
+  })
+
+  // チェックボックスの表示は常にストアに従う。タイトルが一時的に空の行でも「すべて解除」で
+  // チェックが残ると、見た目は選択済みなのに削除されない表示ずれが固定化する（codex P2）。
+  it('clear-all unchecks a selected row even while its title is transiently empty', () => {
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    const dispose = init(root)
+    const boxA = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}="title:A"]`)!
+    boxA.checked = true
+    boxA.dispatchEvent(new Event('change'))
+    root.querySelector('.project-table-title')!.textContent = ''
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-clear-all"]')!.click()
+    expect(boxA.checked).toBe(false)
+    dispose()
+  })
+
+  // タイトルは title 属性を優先して読む（§8.14）。属性だけが後から充填される更新順でも
+  // observer が拾って注入・件数を同期し直す（codex P2）。
+  it('injects for an id-keyed row with an empty title and fills the label when only the title attribute arrives', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    root.innerHTML = `
+<div class="all-projects-container"><project-table><table class="project-table"><tbody>
+  <tr mat-row role="row"><td class="title-column"><a class="project-table-title" href="/notebook/abc" title=""></a></td>
+    <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+</tbody></table></project-table></div>`
+    const dispose = init(root)
+    // ID が取れているのでチェックボックスは出る（すべて選択の対象と一致させる）。読み上げ名はまだ無い。
+    const box = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}="id:abc"]`)
+    expect(box).not.toBeNull()
+    expect(box!.hasAttribute('aria-label')).toBe(false)
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-select-all"]')!.click()
+    expect(box!.checked).toBe(true)
+    root.querySelector('.project-table-title')!.setAttribute('title', 'Late')
+    await flush()
+    expect(box!.getAttribute('aria-label')).toBe('Late')
+    expect(box!.checked).toBe(true)
+    dispose()
+  })
+
+  // 確認時点では一部選択（件数タイプ確認なし）でも、確認中に未選択行が選択可能でなくなり
+  // 「選択 = 全件」になったら、弱い確認のまま進めない（codex P2）。
+  it('aborts when the selection became select-all while the plain confirm dialog was open', async () => {
+    vi.mocked(deleteNotebooks).mockClear()
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    const dispose = init(root)
+    const boxes = root.querySelectorAll<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
+    boxes[0].checked = true
+    boxes[0].dispatchEvent(new Event('change'))
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.click()
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+    // 未選択の B が一覧から消える（別タブでの削除など）→ 選択 A が全件になる
+    root.querySelectorAll('tr[mat-row]')[1].remove()
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.click()
+    await flush()
+    expect(deleteNotebooks).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-nlk="bar-progress"]')!.textContent)
+      .toMatch(/削除対象の一覧が変わった|notebooks to delete changed/)
+    dispose()
+  })
+
+  // #34: ガードのコメントが主張する「タイトル充填時の mutation で observer が再発火して注入される」
+  // 自己修復パスそのもの。空 span へのテキスト充填は childList レコード（テキストノード追加）になる。
+  it('injects the checkbox once the empty title is filled in (observer self-heal)', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    root.innerHTML = LIST_WITH_EMPTY
+    const dispose = init(root)
+    expect(root.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(1)
+    const titles = root.querySelectorAll('.project-table-title')
+    titles[1].appendChild(document.createTextNode('Late'))
+    await flush()
+    expect(root.querySelector(`[${CHECKBOX_ATTR}="title:Late"]`)).not.toBeNull()
+    expect(root.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(2)
     dispose()
   })
 })

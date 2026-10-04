@@ -8,11 +8,12 @@ export const CHECKBOX_ATTR = 'data-nlk-checkbox'
 export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = document): void {
   for (const row of getNotebookRows(root)) {
     const identity = getRowIdentity(row)
-    // 行挿入直後でタイトル span が未充填の行はスキップする。空キー `title:` /
-    // aria-label="" を書き込まないため（issue #28 補足）。スキップしても、
-    // タイトル充填時の characterData / childList 変化で observer が再発火し、
-    // そこで注入・同期される。
-    if (!identity.title) continue
+    // 行挿入直後で ID もタイトルも未充填の行はスキップする。空キー `title:` を書き込まないため
+    // （issue #28 補足 / #33）。スキップしても、充填時の characterData / childList / 属性変化で
+    // observer が再発火し、そこで注入・同期される。ID が取れていればキーは有効なので注入する
+    // （「すべて選択」/ 削除対象の規則 isSelectableRow と揃える。チェックボックスの無い行が
+    // 選択されないようにする）。
+    if (!identity.id && !identity.title) continue
     // 削除できない行（おすすめ = Reader ロール。判定は isDeletableRow / §8.14）にはチェックボックスを
     // 出さない（issue #23）。ノード再利用で削除可能行→削除不可行に化けた場合は
     // 注入済みラベルを掃除する。
@@ -38,7 +39,8 @@ export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = do
         existing.setAttribute(CHECKBOX_ATTR, target.key)
       }
       // キーが ID のとき（§8.14）、リネームではキーが変わらないので aria-label は別に追従させる。
-      if (existing.getAttribute('aria-label') !== target.title) {
+      // タイトルが一時的に空の間は上書きしない（aria-label="" を書かない。issue #28 補足）。
+      if (target.title && existing.getAttribute('aria-label') !== target.title) {
         existing.setAttribute('aria-label', target.title)
       }
       existing.checked = store.has(target.key)
@@ -57,7 +59,8 @@ export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = do
     const box = document.createElement('input')
     box.type = 'checkbox'
     box.setAttribute(CHECKBOX_ATTR, target.key)
-    box.setAttribute('aria-label', target.title)
+    // タイトル未充填（ID だけ取れている）なら付けない。充填時に上の同期パスが付ける。
+    if (target.title) box.setAttribute('aria-label', target.title)
     box.checked = store.has(target.key)
     box.addEventListener('change', () =>
       store.set(getRowKey(row), box.checked),

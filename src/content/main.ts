@@ -3,7 +3,7 @@ import {
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton, getCreateNewButton, getAudioOverviewButton,
-  getAudioGenerationCard, getAudioGenerateButton, SOURCE_TEXT, isDeletableRow, getListObserveTarget,
+  getAudioGenerationCard, getAudioGenerateButton, SOURCE_TEXT, isSelectableRow, getListObserveTarget,
   getOpenMenuBackdrop,
 } from './selectors'
 import {
@@ -15,7 +15,7 @@ import { detectLang, createT } from './i18n'
 import { injectRowCheckboxes, CHECKBOX_ATTR } from './ui/row-checkbox'
 import { mountActionBar } from './ui/action-bar'
 import { mountImportPanel } from './ui/import-panel'
-import { confirmDeletion } from './confirm-dialog'
+import { confirmDeletion, needsStrongConfirm } from './confirm-dialog'
 import { deleteNotebooks, type DeleterDeps } from './deleter'
 import { importUrls, type ImporterDeps } from './importer'
 import { createNotebookWithUrls, triggerAudioOverview } from './notebook-creator'
@@ -33,14 +33,16 @@ export const VERSION = '0.1.0'
 // （読み取りスキャン＋ checked 代入は毎発火走るが O(行数) で有界）。
 // attributes は選択キーの元になるノートブック ID（一覧 = a の href / カード = タイトル span の id。
 // §8.14）の変化に追従するため。Angular が行ノードを同名の別ノートブックへ付け替えると変化は
-// 属性だけになり、childList / characterData では観測できない。attributeFilter で絞るので、
-// 自拡張が書く data-nlk-checkbox / aria-label では自己発火しない。
+// 属性だけになり、childList / characterData では観測できない。title はタイトルの読み取り元
+// （getRowIdentity は title 属性を優先）で、属性だけが後から充填される更新順でも未充填行の
+// 注入・件数を同期し直すため。attributeFilter で絞るので、自拡張が書く
+// data-nlk-checkbox / aria-label では自己発火しない。
 const LIST_OBSERVE_OPTIONS: MutationObserverInit = {
   childList: true,
   subtree: true,
   characterData: true,
   attributes: true,
-  attributeFilter: ['href', 'id'],
+  attributeFilter: ['href', 'id', 'title'],
 }
 
 export function buildTargets(store: SelectionStore, root: ParentNode = document): NotebookTarget[] {
@@ -48,7 +50,8 @@ export function buildTargets(store: SelectionStore, root: ParentNode = document)
   return getNotebookRows(root)
     // 削除不可行（おすすめ/Reader 行。判定は isDeletableRow / §8.14）は対象から除外する（防御。issue #23）。
     // 通常経路ではチェックボックスが注入されないため選択され得ないが、明示除外で意図を固定する。
-    .filter(isDeletableRow)
+    // キーが空になる行（ID もタイトルも未充填）も同じ理由で除外する（isSelectableRow / issue #33）。
+    .filter(isSelectableRow)
     .map((row) => makeTarget(getRowIdentity(row)))
     .filter((tgt) => selected.has(tgt.key))
 }
@@ -88,7 +91,8 @@ export function init(root: ParentNode = document): () => void {
     handlers: {
       onSelectAll: () => {
         // 削除不可行（おすすめ/Reader 行。判定は isDeletableRow / §8.14）は選択に含めない（issue #23）。
-        store.replaceAll(getNotebookRows(root).filter(isDeletableRow).map((r) => getRowKey(r)))
+        // キーが空になる行（ID もタイトルも未充填）も含めない（issue #33）。
+        store.replaceAll(getNotebookRows(root).filter(isSelectableRow).map((r) => getRowKey(r)))
         syncCheckboxes(store, root)
       },
       onClearAll: () => { store.clear(); syncCheckboxes(store, root) },
@@ -132,7 +136,7 @@ export function init(root: ParentNode = document): () => void {
       // 分母は削除可能行のみ（buildTargets / onSelectAll と揃える）。削除不可行
       // （Reader）を数えると、混在リストで削除可能行を全選択しても isSelectAll が
       // false に希薄化し、件数タイプ確認（strong confirm）が漏れる（issue #23 レビュー指摘1）。
-      const totalRows = getNotebookRows(root).filter(isDeletableRow).length
+      const totalRows = getNotebookRows(root).filter(isSelectableRow).length
       const isSelectAll = targets.length === totalRows
       const ok = await confirmDeletion({ count: targets.length, isSelectAll, t })
       // confirm 待機中に teardown された場合は、たとえ確定されても進めない。
@@ -148,7 +152,13 @@ export function init(root: ParentNode = document): () => void {
       // 多重集合レベルの安全網（ID キーなら同名の置換も検出できる。タイトルキーに
       // フォールバックした場合は検出できない —— types.ts 参照）。検証通過後は確認時の順序を
       // 保つため targets をそのまま使う。
-      if (!sameTargetKeys(targets, buildTargets(store, root))) {
+      // 対象が同じでも、確認中に未選択行が消えて「選択 = 全件」になり、必要な確認強度が
+      // 弱 → 強 に変わっていれば中止する（件数タイプ確認を経ていない弱い確認のまま全件削除に
+      // 進めない。行動時点の真で判定する）。既に強い確認を経ていれば（10 件以上など）中止しない。
+      const nowSelectAll = targets.length === getNotebookRows(root).filter(isSelectableRow).length
+      const becameSelectAll =
+        !needsStrongConfirm(targets.length, isSelectAll) && needsStrongConfirm(targets.length, nowSelectAll)
+      if (!sameTargetKeys(targets, buildTargets(store, root)) || becameSelectAll) {
         bar.setProgress(t('selectionChanged'))
         return
       }

@@ -47,13 +47,19 @@ export function mountActionBar(opts: {
 
   let busy = false
   const currentCount = () => countFn?.() ?? store.size
+  // refresh() は一覧 observer の tick ごとに呼ばれるため、実 DOM と比べて変わるものだけ書き込む
+  // （冗長な書き換えと、mount 先が将来監視対象に入った場合の自己発火ループを避ける。
+  // injectRowCheckboxes の「変化時のみ書き込み」と対称。issue #72）。前回値のキャッシュではなく
+  // 実 DOM と比べるので、外から書き換えられた表示も次の render で直る。
+  const setText = (el: HTMLElement, text: string) => { if (el.textContent !== text) el.textContent = text }
   const render = () => {
     const size = currentCount()
-    count.textContent = t('selectedCount', { count: size })
-    del.textContent = t('deleteSelected', { count: size })
-    del.disabled = busy || size === 0
-    del.hidden = busy
-    stop.hidden = !busy
+    setText(count, t('selectedCount', { count: size }))
+    setText(del, t('deleteSelected', { count: size }))
+    const disabled = busy || size === 0
+    if (del.disabled !== disabled) del.disabled = disabled
+    if (del.hidden !== busy) del.hidden = busy
+    if (stop.hidden !== !busy) stop.hidden = !busy
   }
   const unsub = store.onChange(() => render())
   render()
