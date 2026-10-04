@@ -279,7 +279,8 @@ describe('confirm click settling and retry', () => {
 })
 
 // #87: 掴んだ行ノードが生きていても、Angular が別のノートブックへ再利用していれば
-// isConnected は true のまま。ID キーのときだけ、各試行の入口で同一性を確認する
+// isConnected は true のまま。ID キーのときだけ、再試行で確認ダイアログ消滅待ちの後・メニュー
+// クリックの直前に同一性を確認する（#110）
 // （引き直して操作するのではなく確認だけ。タイトルキーは一意でないので適用しない）。
 describe('retry identity check for id-keyed targets (#87)', () => {
   const named = (name: string): HTMLElement => {
@@ -348,6 +349,81 @@ describe('retry identity check for id-keyed targets (#87)', () => {
     const res = await deleteNotebooks([makeTarget({ title: 'A', id: 'id-a' })], deps, {})
     expect(state.confirmClicks).toBe(2)
     expect(res.failed.length).toBe(1)
+  })
+
+  // #110: 再試行は「確認ダイアログが無くなるのを待つ」await を挟んでからメニューを押す。同一性の確認が
+  // その待機より前にあると、待機中にノードが再利用されたとき別のノートブックのメニューを開く。
+  // 前の試行のダイアログが閉じ切らずに残り、再試行の消滅待ちに入った**後で**閉じる世界を作る。
+  // 順序は実時間ではなく待機の単位で固定する: waitFor を包んで「いまどの待機のポーリング中か」を
+  // 記録し、確定クリックの後に確認ダイアログを見に来る待機を数える。
+  //   1 つ目 = ループ末尾の「ダイアログが引くのを待つ」（開いたままなのでタイムアウトする）
+  //   2 つ目 = 再試行の消滅待ち。その最初のポーリングの中でダイアログを閉じ、onClose で対象 ID の
+  //            行を変える（＝再試行の消滅待ちに入った後・メニュークリックの前）。
+  function lingeringDialogOnRetry(deps: DeleterDeps, onClose: () => void) {
+    const state = { moreClicks: 0, confirmClicks: 0 }
+    let menuOpen = false, dialogOpen = false
+    let waitSeq = 0, pollingWait = 0
+    const dialogWaitsAfterConfirm = new Set<number>()
+    deps.waitFor = ((fn: () => unknown, opts?: Parameters<typeof waitFor>[1]) => {
+      const id = ++waitSeq
+      return waitFor(() => {
+        pollingWait = id
+        try { return fn() } finally { pollingWait = 0 }
+      }, opts)
+    }) as typeof waitFor
+    deps.click = (e) => {
+      const name = e.dataset.name
+      if (name === 'more') { state.moreClicks++; menuOpen = true }
+      else if (name === 'delete') { dialogOpen = true; menuOpen = false }
+      else if (name === 'confirm') state.confirmClicks++   // 無言で失敗し、ダイアログは残る
+    }
+    deps.getDeleteMenuItem = () => (menuOpen ? named('delete') : null)
+    deps.getConfirmDialog = () => {
+      if (state.confirmClicks === 1 && dialogOpen && pollingWait) {
+        dialogWaitsAfterConfirm.add(pollingWait)
+        if (dialogWaitsAfterConfirm.size === 2) { dialogOpen = false; onClose() }
+      }
+      return dlg(dialogOpen)
+    }
+    deps.getConfirmDeleteButton = () => named('confirm')
+    return state
+  }
+
+  it('stops without clicking when the id moves to another node while waiting for the previous dialog to close', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
+    const held = container.children[0] as HTMLElement
+    const other = container.children[1] as HTMLElement
+    let current: HTMLElement | null = held
+    const state = lingeringDialogOnRetry(deps, () => { current = other })
+    deps.findRow = () => current
+
+    const res = await deleteNotebooks([makeTarget({ title: 'A', id: 'id-a' })], deps, {})
+    expect(res.succeeded).toEqual([])
+    expect(res.failed.length).toBe(1)
+    expect(res.failed[0].reason).toMatch(/re-identified/)
+    // 再試行のメニューも確認も押していない
+    expect(state.moreClicks).toBe(1)
+    expect(state.confirmClicks).toBe(1)
+    expect(container.children.length).toBe(2)
+  })
+
+  it('stops as outcome-unknown when the target stops resolving while waiting for the previous dialog to close', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
+    const held = container.children[0] as HTMLElement
+    let current: HTMLElement | null = held
+    const state = lingeringDialogOnRetry(deps, () => { current = null })
+    deps.findRow = (t) => (t.id === 'id-a' ? current : (container.children[1] as HTMLElement))
+
+    const res = await deleteNotebooks(
+      [makeTarget({ title: 'A', id: 'id-a' }), makeTarget({ title: 'B', id: 'id-b' })], deps, {})
+    expect(res.succeeded).toEqual([])
+    expect(res.failed.length).toBe(1)
+    expect(res.failed[0].key).toBe('id:id-a')
+    expect(res.failed[0].reason).toMatch(/re-identified/)
+    // 再試行も、次の対象 B への着手もしていない
+    expect(state.moreClicks).toBe(1)
+    expect(state.confirmClicks).toBe(1)
+    expect(container.children.length).toBe(2)
   })
 })
 
