@@ -4,6 +4,7 @@ import {
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton, getCreateNewButton, getAudioOverviewButton,
   getAudioGenerationCard, getAudioGenerateButton, SOURCE_TEXT, isSelectableRow, getListObserveTarget,
+  getOpenMenuBackdrop,
 } from './selectors'
 import {
   makeTarget, type NotebookTarget, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type PendingCreate,
@@ -176,6 +177,7 @@ export function init(root: ParentNode = document): () => void {
           getConfirmDialog: () => getConfirmDialog(),
           getConfirmDeleteButton,
           click: (el) => { safeClick(el) },
+          closeMenu: () => { safeClick(getOpenMenuBackdrop()) },
           waitFor,
         }
         const result = await deleteNotebooks(targets, deps, {

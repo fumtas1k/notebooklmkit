@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   getNotebookRows, getRowIdentity, findDeletableRowByIdentity,
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
-  getListObserveTarget, getCheckboxHost, isDeletableRow, getRowKey,
+  getListObserveTarget, getCheckboxHost, isDeletableRow, getRowKey, getOpenMenuBackdrop,
 } from '../src/content/selectors'
 
 const LIST_HTML = `
@@ -425,5 +425,47 @@ describe('notebook id identity (same-titled notebooks, §8.14)', () => {
     document.body.innerHTML = LIST_HTML
     expect(getRowKey(getNotebookRows()[0])).toBe('title:Alpha')
     expect(getRowIdentity(getNotebookRows()[0])).toEqual({ title: 'Alpha' })
+  })
+})
+
+// #88: 「削除」項目が出ずに停止するとき、開いた3点メニューを閉じるためのバックドロップ。
+// 2026-10-04 実機: メニューを開くと cdk-overlay-container に透明バックドロップが 1 枚足され、
+// そのクリックでメニューが閉じる（§8.14）。
+describe('getOpenMenuBackdrop', () => {
+  const overlay = (inner: string) => `<div class="cdk-overlay-container">${inner}</div>`
+  const BACKDROP = '<div class="cdk-overlay-backdrop cdk-overlay-transparent-backdrop"></div>'
+  const MENU = '<div class="cdk-overlay-pane"><div class="mat-mdc-menu-panel project-actions-menu"></div></div>'
+
+  it('returns the transparent backdrop while a menu panel is open', () => {
+    document.body.innerHTML = overlay(BACKDROP + MENU)
+    expect(getOpenMenuBackdrop()?.classList.contains('cdk-overlay-transparent-backdrop')).toBe(true)
+  })
+
+  it('returns null when no menu panel is open (never clicks a dialog backdrop)', () => {
+    document.body.innerHTML = overlay(
+      '<div class="cdk-overlay-backdrop cdk-overlay-dark-backdrop"></div><mat-dialog-container></mat-dialog-container>',
+    )
+    expect(getOpenMenuBackdrop()).toBeNull()
+  })
+
+  it('ignores the dark (dialog) backdrop even when a menu is open', () => {
+    document.body.innerHTML = overlay('<div class="cdk-overlay-backdrop cdk-overlay-dark-backdrop"></div>' + MENU)
+    expect(getOpenMenuBackdrop()).toBeNull()
+  })
+
+  // 行の3点メニュー以外（アカウントメニュー等）が開いているだけなら触らない（codex P2）。
+  it('returns null when the open menu is not the project actions menu', () => {
+    document.body.innerHTML = overlay(
+      BACKDROP + '<div class="cdk-overlay-pane"><div class="mat-mdc-menu-panel some-other-menu"></div></div>',
+    )
+    expect(getOpenMenuBackdrop()).toBeNull()
+  })
+
+  it('returns the last transparent backdrop when several are stacked', () => {
+    document.body.innerHTML = overlay(
+      '<div id="first" class="cdk-overlay-backdrop cdk-overlay-transparent-backdrop"></div>' +
+      '<div id="last" class="cdk-overlay-backdrop cdk-overlay-transparent-backdrop"></div>' + MENU,
+    )
+    expect(getOpenMenuBackdrop()?.id).toBe('last')
   })
 })

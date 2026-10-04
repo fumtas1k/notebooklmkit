@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # ci.yml の Action はコミット SHA で固定しているため、更新は Dependabot の PR で受ける（issue #5）。
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
