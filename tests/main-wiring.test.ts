@@ -617,3 +617,73 @@ describe('observer characterData tracking (issue #28)', () => {
     dispose()
   })
 })
+
+// 2026-10-04 実機の DOM（requirements §8.14）。全行がノートブック ID を持ち、選択キーは id:<ID>。
+// 同名ノートブックを区別できることを配線レベルで固定する（独立レビュー指摘）。
+describe('init with notebook ids (same-titled notebooks, §8.14)', () => {
+  const MORE = `<project-action-button><nb-icon-button class="project-button-more"><button></button></nb-icon-button></project-action-button>`
+  const row = (id: string, title: string) => `
+    <tr mat-row role="row">
+      <td class="title-column"><a class="project-table-title" title="${title}" href="/notebook/${id}"><span class="project-table-emoji">📄</span> ${title} </a></td>
+      <td class="actions-column">${MORE}</td>
+    </tr>`
+  const PAGE = `
+  <welcome-page><div class="all-projects-container"><div class="my-projects-container">
+    <project-table><table class="project-table"><tbody>${row('id-a', 'Same')}${row('id-b', 'Same')}</tbody></table></project-table>
+  </div></div></welcome-page>`
+  const boxes = () => Array.from(document.querySelectorAll<HTMLInputElement>(`[${CHECKBOX_ATTR}]`))
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  beforeEach(() => { document.body.innerHTML = PAGE })
+
+  it('buildTargets returns only the selected one of two same-titled notebooks', () => {
+    const store = new SelectionStore()
+    store.set('id:id-b', true)
+    expect(buildTargets(store).map((t) => t.key)).toEqual(['id:id-b'])
+  })
+
+  it('checking one same-titled row counts 1, deletes only it, and leaves the other unselected', async () => {
+    vi.mocked(deleteNotebooks).mockReset()
+    vi.mocked(deleteNotebooks).mockResolvedValue({ succeeded: ['id:id-a'], failed: [], aborted: false })
+    const dispose = init()
+    const [a, b] = boxes()
+    a.checked = true
+    a.dispatchEvent(new Event('change'))
+    expect(document.querySelector('[data-nlk="bar-count"]')!.textContent).toContain('1')
+    expect(b.checked).toBe(false)
+
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.click()
+    await tick()
+
+    const targets = vi.mocked(deleteNotebooks).mock.calls[0][0]
+    expect(targets.map((t) => t.key)).toEqual(['id:id-a'])
+    // 成功キーが store から外れ、同名のもう片方は未選択のまま。
+    expect(boxes().map((x) => x.checked)).toEqual([false, false])
+    expect(document.querySelector('[data-nlk="bar-count"]')!.textContent).toContain('0')
+    dispose()
+  })
+
+  it('select-all stores id keys', () => {
+    const dispose = init()
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-select-all"]')!.click()
+    expect(boxes().map((x) => x.getAttribute(CHECKBOX_ATTR))).toEqual(['id:id-a', 'id:id-b'])
+    expect(boxes().every((x) => x.checked)).toBe(true)
+    expect(document.querySelector('[data-nlk="bar-count"]')!.textContent).toContain('2')
+    dispose()
+  })
+
+  // ID は属性（href / id）にある。Angular が行ノードを同名の別ノートブックへ付け替えると
+  // 変化は属性だけになり、childList / characterData では観測できない。
+  it('re-syncs a checkbox when only the notebook id attribute of a row changes', async () => {
+    const dispose = init()
+    const [a] = boxes()
+    a.checked = true
+    a.dispatchEvent(new Event('change'))
+    document.querySelector('a.project-table-title')!.setAttribute('href', '/notebook/id-c')
+    await tick()
+    expect(a.getAttribute(CHECKBOX_ATTR)).toBe('id:id-c')
+    expect(a.checked).toBe(false)
+    dispose()
+  })
+})

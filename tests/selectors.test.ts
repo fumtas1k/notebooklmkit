@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
-  getNotebookRows, getRowIdentity, findRowByIdentity,
+  getNotebookRows, getRowIdentity, findDeletableRowByIdentity,
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
-  getListObserveTarget, getCheckboxHost, isDeletableRow,
+  getListObserveTarget, getCheckboxHost, isDeletableRow, getRowKey,
 } from '../src/content/selectors'
 
 const LIST_HTML = `
@@ -64,12 +64,12 @@ describe('selectors', () => {
   })
 
   it('finds a row by title', () => {
-    const found = findRowByIdentity({ title: 'Beta' })
+    const found = findDeletableRowByIdentity({ title: 'Beta' })
     expect(getRowIdentity(found!).title).toBe('Beta')
   })
 
   it('returns null when the row is gone', () => {
-    expect(findRowByIdentity({ title: 'Ghost' })).toBeNull()
+    expect(findDeletableRowByIdentity({ title: 'Ghost' })).toBeNull()
   })
 
   it('gets the more button of a row', () => {
@@ -243,5 +243,187 @@ describe('getCheckboxHost (table view)', () => {
   it('returns null when the row has neither a title cell/td nor a card box', () => {
     const bare = document.createElement('div')
     expect(getCheckboxHost(bare)).toBeNull()
+  })
+})
+
+// 2026-10-04 実機の DOM（requirements §8.14）。3点メニューは nb-icon-button.project-button-more で
+// ラップされ、内側の button は専用クラスを持たない。おすすめ（featured）行にも 3点メニューが付く
+// （ただしメニューに「削除」は無い）。一覧表示のタイトルは a.project-table-title（title 属性つき、
+// 絵文字 span を内包）。
+const MORE_2026_10 = `<project-action-button><nb-icon-button class="project-button-more nb-button"><button aria-label="プロジェクトの操作メニュー"><mat-icon>more_vert</mat-icon></button></nb-icon-button><mat-menu></mat-menu></project-action-button>`
+const LIST_HTML_2026_10 = `
+<div class="all-projects-container">
+  <div class="my-projects-container"><project-table><table class="project-table"><tbody>
+    <tr mat-row role="row">
+      <td class="title-column"><a class="project-table-title" title="Owned" href="/notebook/x"><span class="project-table-emoji">📄</span> Owned </a></td>
+      <td class="actions-column">${MORE_2026_10}</td>
+    </tr>
+  </tbody></table></project-table></div>
+  <div class="featured-projects-container"><project-table><table class="project-table"><tbody>
+    <tr mat-row role="row">
+      <td class="title-column"><a class="project-table-title" title="Featured" href="/notebook/y"><span class="project-table-emoji"><img alt="作成者のロゴ"></span> Featured </a></td>
+      <td class="actions-column">${MORE_2026_10}</td>
+    </tr>
+  </tbody></table></project-table></div>
+</div>`
+const CARD_HTML_2026_10 = `
+<div class="all-projects-container">
+  <div class="featured-projects-container">
+    <project-button class="project-button"><mat-card class="project-button-card featured-project-card">
+      <div class="project-button-box"><div class="project-button-box-left"></div>${MORE_2026_10}</div>
+      <div><span class="project-button-title"> Featured </span></div>
+    </mat-card></project-button>
+  </div>
+  <div class="my-projects-container">
+    <project-button class="project-button"><mat-card class="project-button-card">
+      <div class="project-button-box"><div class="project-button-box-left"></div>${MORE_2026_10}</div>
+      <div><span class="project-button-title"> Owned </span></div>
+    </mat-card></project-button>
+  </div>
+</div>`
+
+describe('selectors (2026-10 DOM, §8.14)', () => {
+  it('gets the more button wrapped in nb-icon-button.project-button-more (table)', () => {
+    document.body.innerHTML = LIST_HTML_2026_10
+    const btn = getMoreButton(getNotebookRows()[0])
+    expect(btn?.tagName).toBe('BUTTON')
+    expect(btn?.getAttribute('aria-label')).toBe('プロジェクトの操作メニュー')
+  })
+
+  it('gets the wrapped more button for a card', () => {
+    document.body.innerHTML = CARD_HTML_2026_10
+    expect(getMoreButton(getNotebookRows()[1])?.tagName).toBe('BUTTON')
+  })
+
+  it('reads the table title from a.project-table-title without the emoji prefix', () => {
+    document.body.innerHTML = LIST_HTML_2026_10
+    expect(getRowIdentity(getNotebookRows()[0]).title).toBe('Owned')
+  })
+
+  it('table and card views derive the same title (selection key survives a view switch)', () => {
+    document.body.innerHTML = LIST_HTML_2026_10
+    const tableTitle = getRowIdentity(getNotebookRows()[0]).title
+    document.body.innerHTML = CARD_HTML_2026_10
+    expect(getRowIdentity(getNotebookRows()[1]).title).toBe(tableTitle)
+  })
+
+  // おすすめ行にも 3点メニューが付いたため、moreButton の有無だけでは削除可否を判定できない。
+  it('treats featured rows as non-deletable even though they now have a more button (table)', () => {
+    document.body.innerHTML = LIST_HTML_2026_10
+    const [owned, featured] = getNotebookRows()
+    expect(isDeletableRow(owned)).toBe(true)
+    expect(isDeletableRow(featured)).toBe(false)
+  })
+
+  it('treats featured cards as non-deletable even though they now have a more button', () => {
+    document.body.innerHTML = CARD_HTML_2026_10
+    const [featured, owned] = getNotebookRows()
+    expect(isDeletableRow(featured)).toBe(false)
+    expect(isDeletableRow(owned)).toBe(true)
+  })
+
+  it('finds the confirm button in the 2026-10 dialog (no yes-button class) and never the cancel button', () => {
+    const dialog = document.createElement('div')
+    // 実 DOM に近い入れ子（ラベルは span.mdc-button__label 内）。並び順を入れ替えても取消は返さない。
+    const cancel = `<button><span class="mdc-button__label">キャンセル</span></button>`
+    const del = `<button class="mat-tonal-button"><span class="mdc-button__label">削除</span></button>`
+    dialog.innerHTML = cancel + del
+    expect(getConfirmDeleteButton(dialog)?.textContent).toBe('削除')
+    dialog.innerHTML = del + cancel
+    expect(getConfirmDeleteButton(dialog)?.textContent).toBe('削除')
+    dialog.innerHTML = cancel
+    expect(getConfirmDeleteButton(dialog)).toBeNull()
+  })
+
+  // グリッド表示ではおすすめセクションが文書順で先。所有ノートブックと同名のおすすめがあると、
+  // タイトルだけで引くとおすすめ行を掴み、「削除」項目の無いメニューを開いてタイムアウトする
+  // （選択した所有ノートブックが消せない。レビュー指摘）。
+  it('findDeletableRowByIdentity skips a same-titled featured row that comes first', () => {
+    document.body.innerHTML = CARD_HTML_2026_10.replace(' Featured ', ' Owned ')
+    const [featured, owned] = getNotebookRows()
+    expect(isDeletableRow(featured)).toBe(false)
+    expect(findDeletableRowByIdentity({ title: 'Owned' })).toBe(owned)
+  })
+
+  it('findDeletableRowByIdentity returns null when only a non-deletable row matches', () => {
+    document.body.innerHTML = CARD_HTML_2026_10
+    expect(findDeletableRowByIdentity({ title: 'Featured' })).toBeNull()
+  })
+
+  it('falls back to text without the emoji when the title attribute is missing', () => {
+    document.body.innerHTML = LIST_HTML_2026_10.replace(' title="Owned"', '')
+    expect(getRowIdentity(getNotebookRows()[0]).title).toBe('Owned')
+  })
+})
+
+// 2026-10-04 実機では全行がノートブック ID を持つ（§8.14）: 一覧は a.project-table-title の
+// href="/notebook/<id>"、カードは span.project-button-title の id="project-<id>-title"。
+// これを識別子に使い、同名ノートブックを区別する（タイトル識別の既知エッジケースの解消）。
+const ID_A = '11111111-1111-4111-8111-111111111111'
+const ID_B = '22222222-2222-4222-8222-222222222222'
+const dupCard = (id: string) => `
+  <project-button class="project-button"><mat-card class="project-button-card">
+    <div class="project-button-box"><div class="project-button-box-left"></div>${MORE_2026_10}</div>
+    <div><span class="project-button-title" id="project-${id}-title"> Same </span></div>
+  </mat-card></project-button>`
+const dupRow = (id: string) => `
+  <tr mat-row role="row">
+    <td class="title-column"><a class="project-table-title" title="Same" href="/notebook/${id}"><span class="project-table-emoji">📄</span> Same </a></td>
+    <td class="actions-column">${MORE_2026_10}</td>
+  </tr>`
+const DUP_CARDS = `<div class="all-projects-container"><div class="my-projects-container">${dupCard(ID_A)}${dupCard(ID_B)}</div></div>`
+const DUP_ROWS = `<div class="all-projects-container"><div class="my-projects-container"><project-table><table class="project-table"><tbody>${dupRow(ID_A)}${dupRow(ID_B)}</tbody></table></project-table></div></div>`
+
+describe('notebook id identity (same-titled notebooks, §8.14)', () => {
+  it('reads the notebook id from the card title span id', () => {
+    document.body.innerHTML = DUP_CARDS
+    expect(getNotebookRows().map((r) => getRowIdentity(r))).toEqual([
+      { title: 'Same', id: ID_A }, { title: 'Same', id: ID_B },
+    ])
+  })
+
+  it('reads the notebook id from the table title link href', () => {
+    document.body.innerHTML = DUP_ROWS
+    expect(getNotebookRows().map((r) => getRowIdentity(r).id)).toEqual([ID_A, ID_B])
+  })
+
+  it('gives same-titled notebooks distinct keys, identical across table and card views', () => {
+    document.body.innerHTML = DUP_CARDS
+    const cardKeys = getNotebookRows().map(getRowKey)
+    expect(new Set(cardKeys).size).toBe(2)
+    document.body.innerHTML = DUP_ROWS
+    expect(getNotebookRows().map(getRowKey)).toEqual(cardKeys)
+  })
+
+  it('finds the selected one of two same-titled notebooks (never the other)', () => {
+    document.body.innerHTML = DUP_CARDS
+    const [a, b] = getNotebookRows()
+    expect(findDeletableRowByIdentity({ title: 'Same', id: ID_B })).toBe(b)
+    expect(findDeletableRowByIdentity({ title: 'Same', id: ID_A })).toBe(a)
+  })
+
+  it('does not fall back to a title match when the id-identified notebook is gone', () => {
+    // ID_A を削除済みの状態。同名の ID_B を掴んではならない（選択していないものを消さない）。
+    document.body.innerHTML = `<div class="all-projects-container"><div class="my-projects-container">${dupCard(ID_B)}</div></div>`
+    expect(findDeletableRowByIdentity({ title: 'Same', id: ID_A })).toBeNull()
+  })
+
+  it('extracts the id from absolute / query-suffixed hrefs and ignores an empty id', () => {
+    const idOf = (href: string) => {
+      document.body.innerHTML = DUP_ROWS.replace(`/notebook/${ID_A}`, href)
+      return getRowIdentity(getNotebookRows()[0]).id
+    }
+    expect(idOf(`https://notebook.google.com/notebook/${ID_A}`)).toBe(ID_A)
+    expect(idOf(`/notebook/${ID_A}?authuser=0`)).toBe(ID_A)
+    expect(idOf(`/notebook/${ID_A}#x`)).toBe(ID_A)
+    // 空 ID は ID 扱いにしない（タイトルキーへフォールバック）。
+    expect(idOf('/notebook/')).toBeUndefined()
+    expect(getRowKey(getNotebookRows()[0])).toBe('title:Same')
+  })
+
+  it('falls back to a title key when a row exposes no id (old DOM)', () => {
+    document.body.innerHTML = LIST_HTML
+    expect(getRowKey(getNotebookRows()[0])).toBe('title:Alpha')
+    expect(getRowIdentity(getNotebookRows()[0])).toEqual({ title: 'Alpha' })
   })
 })

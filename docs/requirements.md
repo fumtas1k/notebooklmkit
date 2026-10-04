@@ -156,6 +156,7 @@ Phase 2（URL / タブ一括インポート）で使うソース追加フロー�
 セレクタは `src/content/selectors.ts` に集約し、テキスト / aria-label マッチを主軸に、
 候補集合を下記の安定クラス / 属性で絞る方針。
 
+- **注: 2026-10-04 の刷新で `add-source-button` / `drop-zone-icon-button` は消滅した。現行のクラスは §8.13 を参照。**
 - **ソース追加ボタン**: `button.add-source-button`（`aria-label="ソースを追加"`）。左ソースパネル内。
 - **ダイアログ**: `mat-dialog-container`（削除確認と同じコンテナ要素）。
 - **ソース種別ボタン群**: 「ファイルをアップロード / ウェブサイト / ドライブ / コピーしたテキスト」の4つ。
@@ -209,6 +210,8 @@ Phase 2（URL / タブ一括インポート）で使うソース追加フロー�
   実機で生成開始→表示の遅延を計測してから妥当値を再確認する（未計測）。
 
 ## 8.8 一覧の表示モード切替とコンテナ置換 DOM 調査結果（2026-07-05 実機確認）
+
+**注: 2026-10-04 の刷新で、タイトル要素・3点メニューの DOM と「おすすめ行は moreButton を持たない」前提が変わった。現行は §8.14 を参照。**
 
 一覧ページ右上の表示モード切替（カード＝グリッド / 一覧＝リスト）と、切替時の DOM 挙動を
 実機（Claude in Chrome）で確認。§8.5（2026-07-01・テーブル前提）を補足・更新する。
@@ -420,6 +423,124 @@ mdc-button mat-mdc-button-base mdc-button--unelevated
 ### 実機検証
 修正後のシーケンス（タイル → ダイアログ待ち → settle 400ms → 「生成」）で
 「音声解説を生成しています...」への到達を確認。
+
+## 8.13 新規作成ボタンとソース種別ボタンの刷新（2026-10-04 実機確認）
+
+F2-2（ツールバーアイコン → 新規ノートブック作成）が「ボタンを押しても新規作成に進まない」状態に
+なった。DOM セレクタ 2 箇所が同時に外れていた（ホスト / URL は §8.9 のまま無傷）。
+
+### 変更点
+
+| | 旧 | 新（2026-10-04）|
+|---|---|---|
+| 一覧の作成ボタン | `button.create-new-button`、`aria-label="ノートブックを新規作成"`（2026-07-04）| **専用クラスなし**（汎用 Material クラスのみ）、`aria-label="新しいノートブック"`、textContent は `add_2新しいノートブック`（アイコンのリガチャ込み）|
+| ソース種別ボタン | `button.drop-zone-icon-button`（§8.6）| `button.source-action-button`（親は `div.source-buttons`）|
+| ソース追加ボタン | `button.add-source-button`（§8.6）| 専用クラスなし、`aria-label="ソースを追加"`（既存の aria-label フォールバックで取得できており修正不要）|
+
+- 作成ボタンの祖先: `nb-button` → `div.projects-header-actions` → `div.projects-header-row` →
+  `div.my-projects-container` → `div.all-projects-container`。一覧ページ内で該当は 1 件。
+- 種別ボタンは「ファイルをアップロード / ウェブサイト / 書籍 / ドライブ / コピーしたテキスト」の 5 つ。
+  ウェブサイトの textContent は `link_2video_youtubeウェブサイト`。
+- 同ダイアログの「ウェブ」コーパス選択ボタン（`nb-button.corpus-select` 配下。`source-action-button`
+  非該当）は引き続き存在するため、候補集合をクラスで絞る方針（§8.6）は維持する。
+- **無傷だったもの**: クリック後の `/notebook/<id>?addSource=true` 遷移とダイアログ自動オープン、
+  `mat-dialog-container`、`textarea[formcontrolname="urls"]`、テキスト「挿入」の `button[type="button"]`、
+  挿入後のダイアログ消滅（実測 約 235ms）。
+
+### 症状と機序
+`getCreateNewButton` はクラス → `SOURCE_TEXT.createNew` の順で探すが、クラスが消え、文言
+「新しいノートブック」も旧正規表現（`新規作成|ノートブックを新規作成|create new|new notebook`）に
+一致しないため常に `null`。`createNotebookWithUrls` の ① が 15 秒でタイムアウトして `false`
+（バッジ `!`）になる。仮に ① を通っても ② の種別チップが `null` で同様に止まる。② は importer
+（F2-1 / F2-3）と共有しているため、**インポートも同時に壊れていた**。
+
+### 対策（`selectors.ts`）
+1. `getCreateNewButton`: 専用クラスが無くなったので **aria-label 完全一致**
+   （`SOURCE_TEXT.createNewExact`）を主軸にする。部分一致（`createNew` に「新しいノートブック」を追加）は
+   その後ろの保険。完全一致を先にするのは、「新しいノートブック…」という題のノートブックの
+   ボタンが文書順で先にあっても掴まないため。
+2. `SELECTORS.sourceChipCandidates` に `button.source-action-button` を追加（旧クラスも残す）。
+
+### 実機検証
+実験用ノートブックを 1 つ作成して確認（`https://example.com/` を 1 件挿入）。新しい判定で
+作成ボタン取得 → クリックで遷移 → 種別チップ取得 → URL 欄 → 挿入有効化 → 挿入 → ダイアログ消滅まで
+通ること、およびノートブックページの「ソースを追加」→ 種別チップ取得（インポート経路）を確認した。
+
+## 8.14 一覧の 3点メニュー・タイトル・おすすめ行・削除確認の刷新（2026-10-04 実機確認）
+
+§8.13 と同じ刷新で、Phase 1（一括削除）も**チェックボックスが 1 つも出ない**状態になっていた
+（アクションバーだけ表示され「0件選択中」のまま）。
+
+### 変更点
+
+| | 旧 | 新（2026-10-04）|
+|---|---|---|
+| 3点メニュー | `project-action-button > button.project-button-more` | `project-action-button > nb-icon-button.project-button-more > button`（内側 `button` は専用クラスなし、`aria-label="プロジェクトの操作メニュー"`）|
+| 一覧表示のタイトル | `span.project-table-title`（絵文字は兄弟 span）| `a.project-table-title`（`title` 属性にタイトル、`span.project-table-emoji` を**内包**）|
+| おすすめ行の 3点メニュー | 無し（§8.5 / #23 はこれで削除可否を判定）| **有り**。メニューは「コレクションに追加 / 上部に固定 / ノートブックを報告」で「削除」は無い |
+| 削除確認の確定 / 取消 | `button.yes-button` / `button.no-button`（§8.10）| クラス消滅。「削除」は `mat-tonal-button`、「キャンセル」は専用クラスなし |
+
+- セクション容器は両表示モード共通: `.all-projects-container` 直下に `div.my-projects-container` と
+  `div.featured-projects-container`。おすすめカードは `mat-card.featured-project-card`。
+- 所有ノートブックのメニュー: 「タイトルを編集 / コレクションに追加 / 上部に固定 / 削除」。
+  削除項目 `.cdk-overlay-container button.mat-mdc-menu-item.delete-button` は**無傷**。
+- カードのチェックボックスホスト `div.project-button-box` と、その直接子 `project-action-button`、
+  カードタイトル `span.project-button-title`、安定祖先 `welcome-page` は無傷。
+- 一覧表示は既定で各セクション先頭のみ（実測 10 + 5 行）を出し、「もっと見る / すべて表示」で展開する。
+
+### 症状と機序
+`getMoreButton` が全行で `null` → `isDeletableRow` が全行 `false` → チェックボックス注入対象ゼロ。
+セレクタだけ直すと今度はおすすめ行が「削除可能」と誤判定される（3点メニューが付いたため）。
+また一覧表示のタイトルは `textContent` だと「📄 タイトル」になり、カード表示のキーと食い違う。
+
+### 対策（`selectors.ts`）
+1. `SELECTORS.moreButton` に新形 `project-action-button .project-button-more button` を追加（旧形も残す）。
+2. `isDeletableRow`: moreButton あり **かつ** `.featured-projects-container` の外。ロール列の文言は
+   ロケール依存なので使わない（#23 と同じ理由）。取りこぼしても deleter は「削除」項目が出ず
+   タイムアウトで安全停止する。
+3. `SELECTORS.title` をタグ非依存の `.project-table-title` にし、`getRowIdentity` は `title` 属性を
+   優先（無ければ `textContent`）。カード表示と同じタイトルになり、表示切替後も選択キーが一致する。
+4. 削除確認ボタンは修正不要 —— §8.10 の二段構え（安定クラス → テキスト完全一致）の後段で取れている。
+5. deleter の行取得を `findDeletableRowByIdentity`（削除可能な行に限定）に変更。グリッド表示では
+   おすすめセクションが文書順で先にあり、所有ノートブックと同名のおすすめ行があるとタイトルだけの
+   検索ではそちらを掴む。旧 DOM では 3点メニューが無く即停止していたが、新 DOM では「削除」項目の
+   無いメニューを開いてタイムアウトし、選択した行を消せない（誤削除にはならない。独立レビュー指摘）。
+
+6. **行の識別をノートブック ID に変更**（`types.ts` の `makeTarget` / `selectors.ts` の `getRowIdentity`）。
+   新 DOM では全行が ID を持つ: 一覧は `a.project-table-title` の `href="/notebook/<id>"`、カードは
+   `span.project-button-title` の `id="project-<id>-title"`。実測でグリッド 413 行すべて ID あり・重複なし、
+   一覧 15 行の ID はすべてグリッド側と一致。キーは `id:<id>`、ID を取れない DOM では従来の
+   `title:<タイトル>` にフォールバックする。これで §8.5 以来の「同名ノートブックを区別できない」
+   （片方だけチェックしても 2 件扱いになり、削除で両方消える）が解消する。行検索もキー一致に
+   したので、ID で確定した対象を同名の別行に取り違えない。
+7. 一覧表示のチェックボックス配置（`row-checkbox.css`）。タイトルが `display:flex` の `a` になり、
+   注入した label が独立行に落ちて行高が 52 → 61px に伸びていた。チェックボックス直後のタイトルを
+   `inline-flex` にして同じ行に並べる。実測（359 行）: 行高はすべて 52px、チェックボックスとタイトルの
+   中心 Y の差は 0px、タイトルのセル外へのはみ出しなし、`elementFromPoint` で両者とも最前面。
+
+8. 一覧の再スキャン observer に `attributes`（`attributeFilter: ['href', 'id']`）を追加。ID は属性に
+   あるため、Angular が行ノードを同名の別ノートブックへ付け替えた場合（変化が属性だけ）にも
+   チェックボックスのキーと checked を追従させる（独立レビュー指摘。実機での発生は未確認の予防）。
+
+### 未対応（既知）
+- 再試行時、掴んだ行ノードがまだ同じノートブックを指しているかは確認していない（`row.isConnected` のみ）。
+  削除が遅れて成立し、かつ Angular がそのノードを別ノートブックに再利用した場合に取り違え得る。
+  現行 DOM では削除で行ノードが外れることを確認済みで、#82 からの構造。ID が取れるようになったので、
+  各試行の入口で同一性を確認する強化が可能（独立レビュー指摘。別 issue）。
+- 「削除」項目の無い行を掴んでタイムアウトした場合、開いたメニューが残る（同一実行内では即停止する
+  ため次の対象が掴むことは無い）。my-projects 側に閲覧者権限の共有ノートブックがある場合に起こり得るが、
+  そのメニュー構成は未調査。
+
+### 実機検証
+修正後の `selectors.ts` を単体バンドルして実ページで評価:
+
+| | 行数 | 削除可能判定 | うちおすすめ | ホスト取得 | 空タイトル |
+|---|---|---|---|---|---|
+| グリッド | 411 | 357 | 0 | 357 | 0 |
+| 一覧 | 15 | 10 | 0 | 10 | 0 |
+
+両モードで先頭 3 件のタイトルが一致。実験用ノートブックで 3点メニュー → 「削除」項目 → 確認ダイアログ →
+`getConfirmDeleteButton` が「削除」を返すところまで確認し、キャンセルで閉じた（実削除はしていない）。
 
 ## 9. スコープ外（当面）
 

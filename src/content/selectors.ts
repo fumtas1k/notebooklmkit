@@ -1,9 +1,13 @@
 import { makeTarget, type RowIdentity } from '../types'
 
-// §8.5 の実 DOM 調査に基づくセレクタ。UI 変更時はこのファイルのみ修正する。
+// 実 DOM 調査（requirements.md §8.5〜§8.14。最新の一覧 DOM は §8.14）に基づくセレクタ。
+// UI 変更時はこのファイルのみ修正する。
 export const SELECTORS = {
   row: 'project-table table.project-table tbody tr[mat-row][role="row"]',
-  title: 'span.project-table-title',
+  // 一覧表示のタイトル。2026-10-04 実機で span → a.project-table-title（title 属性つき、
+  // 絵文字 span を内包）に変わったため、タグを問わずクラスで取る（§8.14）。
+  title: '.project-table-title',
+  titleEmoji: '.project-table-emoji',
   titleCell: 'td.title-column',
   // ---- カード（グリッド）表示。2026-07-05 実機調査済み（requirements.md §8.8）。----
   // ページは常に一方のモード（カード=project-button のみ / 一覧=project-table のみ）。
@@ -11,11 +15,18 @@ export const SELECTORS = {
   cardTitle: 'span.project-button-title',
   cardCheckboxHost: 'div.project-button-box',
   cardActionButton: 'project-action-button',
-  moreButton: 'project-action-button button.project-button-more',
+  // 3点メニュー。2026-10-04 実機で button.project-button-more →
+  // nb-icon-button.project-button-more > button（内側 button は専用クラスなし）に変わった（§8.14）。
+  // 旧形も旧 UI が残る環境向けに残す。
+  moreButton:
+    'project-action-button button.project-button-more, project-action-button .project-button-more button',
+  // おすすめ（閲覧者）ノートブックのセクション。表示モードを問わず存在する（§8.14）。
+  featuredSection: '.featured-projects-container',
   deleteMenuItem: '.cdk-overlay-container button.mat-mdc-menu-item.delete-button',
   confirmDialog: 'mat-dialog-container',
   // 削除確認ダイアログのボタン。2026-08-08 の UI 刷新で
   // primary-button / tertiary-button → yes-button / no-button に変わった（§8.10）。
+  // 2026-10-04 実機では yes-button / no-button も消え、テキスト完全一致側で取れている（§8.14）。
   // 取得は getConfirmDeleteButton（クラス＋テキストの二段構え）を使うこと。
   confirmDeleteButton: 'button.yes-button',
   cancelButton: 'button.no-button',
@@ -26,10 +37,13 @@ export const SELECTORS = {
   listRoot: 'welcome-page',
   // ---- 以下 Phase 2（ソース追加フロー）。2026-07-03 実機調査済み（requirements.md §8.6）。----
   // クラス churn に強いよう、テキスト / aria-label マッチング（SOURCE_TEXT）を主軸にしつつ、
-  // 候補集合を安定クラス（drop-zone-icon-button 等）で絞って誤マッチを防ぐ。
+  // 候補集合を安定クラス（source-action-button 等）で絞って誤マッチを防ぐ。
   // UI が変わったらこのファイルだけを直す。実機確認手順は docs/e2e-checklist-phase2.md §0。
   sourceDialog: 'mat-dialog-container',
-  sourceChipCandidates: 'mat-chip, .mdc-evolution-chip, [role="option"], button.drop-zone-icon-button',
+  // 種別ボタンは 2026-10-04 実機で drop-zone-icon-button → source-action-button に変わった
+  // （§8.13）。旧クラスは旧 UI が残る環境向けに候補へ残す。
+  sourceChipCandidates:
+    'mat-chip, .mdc-evolution-chip, [role="option"], button.source-action-button, button.drop-zone-icon-button',
 } as const
 
 // 再スキャン observer を張る安定祖先の候補（表示モード切替で置換される
@@ -45,13 +59,31 @@ export function getNotebookRows(root: ParentNode = document): HTMLElement[] {
 
 export function getRowIdentity(row: HTMLElement): RowIdentity {
   const titleEl = row.querySelector(SELECTORS.title) ?? row.querySelector(SELECTORS.cardTitle)
-  const title = titleEl?.textContent?.trim() ?? ''
-  return { title }
+  // 一覧表示の a.project-table-title は絵文字 span を内包するため、textContent だと
+  // 「📄 タイトル」になりカード表示のタイトルとキーが食い違う。title 属性（絵文字なし）を
+  // 優先する。無ければ絵文字 span を除いた textContent にフォールバックする（§8.14）。
+  const title = titleEl?.getAttribute('title')?.trim() || textWithoutEmoji(titleEl)
+  const id = getNotebookId(titleEl)
+  return id ? { title, id } : { title }
 }
 
-// 行 `jslog` は全行同一で識別子に使えないため、タイトルで一致を取る。
-export function findRowByIdentity(id: RowIdentity, root: ParentNode = document): HTMLElement | null {
-  return getNotebookRows(root).find((r) => getRowIdentity(r).title === id.title) ?? null
+// タイトル要素からノートブック ID を取る（2026-10-04 実機・§8.14）。
+// 一覧: a.project-table-title の href="/notebook/<id>" / カード: span.project-button-title の
+// id="project-<id>-title"。どちらも無ければ undefined（呼び出し側はタイトルキーにフォールバック）。
+function getNotebookId(titleEl: Element | null): string | undefined {
+  if (!titleEl) return undefined
+  return (
+    titleEl.getAttribute('href')?.match(/\/notebook\/([^/?#]+)/)?.[1] ??
+    titleEl.id.match(/^project-(.+)-title$/)?.[1]
+  )
+}
+
+function textWithoutEmoji(el: Element | null): string {
+  if (!el) return ''
+  if (!el.querySelector(SELECTORS.titleEmoji)) return el.textContent?.trim() ?? ''
+  const clone = el.cloneNode(true) as Element
+  clone.querySelectorAll(SELECTORS.titleEmoji).forEach((e) => e.remove())
+  return clone.textContent?.trim() ?? ''
 }
 
 // 行から選択キーを導出（identity → key を1箇所に集約）。
@@ -63,11 +95,25 @@ export function getMoreButton(row: HTMLElement): HTMLElement | null {
   return row.querySelector<HTMLElement>(SELECTORS.moreButton)
 }
 
-// 削除可能な行か（= 3点メニュー moreButton を持つ行）。おすすめ（Reader ロール）行は
-// moreButton が DOM に無いため false（ロール文字列はロケール依存で脆いので moreButton で
-// 判定。2026-07-04 実機で「すべて」タブ337行 owner=有/reader=無 の誤分類ゼロを確認。issue #23）。
+// 削除可能な行か（= 3点メニュー moreButton を持ち、おすすめセクション外の行）。
+// 2026-07-04 時点ではおすすめ（Reader ロール）行に moreButton が無く、その有無だけで判定できた
+// （issue #23）が、2026-10-04 実機ではおすすめ行にも moreButton が付いた（メニューに「削除」は無い。
+// §8.14）。ロール文字列はロケール依存で脆いので、セクション容器（featured-projects-container）で除外する。
+// 取りこぼしても deleter は「削除」項目が出ずタイムアウトで安全停止するが、消せない行に
+// チェックボックスを出さないためにここで弾く。
 export function isDeletableRow(row: HTMLElement): boolean {
-  return getMoreButton(row) != null
+  return getMoreButton(row) != null && row.closest(SELECTORS.featuredSection) == null
+}
+
+// 削除対象の行を選択キーで引く（ID があれば ID、無ければタイトル。types.ts の makeTarget）。
+// ID で識別した対象を、タイトルが同じだけの別行に取り違えない。検索は削除可能な行に限定する:
+// おすすめ行にも 3点メニューが付いた（§8.14）ため、タイトルキーにフォールバックした場合、
+// 所有ノートブックと同名のおすすめ行が文書順で先にあると（グリッド表示はおすすめセクションが先）、
+// そちらを掴んで「削除」項目の無いメニューを開き、選択した行を消せないまま止まる。
+// 対象確定（buildTargets）と同じ集合から引く。
+export function findDeletableRowByIdentity(id: RowIdentity, root: ParentNode = document): HTMLElement | null {
+  const key = makeTarget(id).key
+  return getNotebookRows(root).find((r) => isDeletableRow(r) && getRowKey(r) === key) ?? null
 }
 
 // チェックボックスを入れるホストセル（タイトル列）。新しい列を足すと
@@ -149,7 +195,10 @@ export const SOURCE_TEXT = {
   addButtonExact: /^[+＋]?\s*(追加|add)$/i,
   websiteChip: /ウェブサイト|website/i,
   submit: /挿入|insert/i,
-  createNew: /新規作成|ノートブックを新規作成|create new|new notebook/i,
+  createNew: /新規作成|ノートブックを新規作成|新しいノートブック|create new|new notebook/i,
+  // 作成ボタンの aria-label 完全一致（§8.13）。部分一致より先に試し、同じ語を含むだけの
+  // 別ボタン（例: 「新しいノートブック…」という題のノートブック）を掴まないようにする。
+  createNewExact: /^(新しいノートブック|ノートブックを新規作成|new notebook|create new notebook)$/i,
   audioOverview: /音声解説|音声概要|audio overview/i,
   // 音声生成中を表す Studio の表示テキスト（生成開始検知 = 再試行停止 ＆ 二重生成防止に使う。issue #60）。
   audioGenerating: /生成しています|生成中|generating/i,
@@ -173,13 +222,16 @@ export function getAddSourceButton(root: ParentNode = document): HTMLElement | n
 }
 
 // ホーム/一覧の「新規作成」ボタン。自拡張が注入した UI（data-nlk 配下）は除外する。
-// 実 DOM: button.create-new-button（aria-label="ノートブックを新規作成"）。2026-07-04 実機確認。
+// 実 DOM（2026-10-04 実機確認・§8.13）: 専用クラスの無い button（aria-label="新しいノートブック"）。
+// 旧 button.create-new-button（aria-label="ノートブックを新規作成"。2026-07-04）は消滅した。
+// 専用クラスが無くなったので aria-label 完全一致を主軸にし、旧クラス / 部分一致は保険として残す。
 export function getCreateNewButton(root: ParentNode = document): HTMLElement | null {
   const buttons = Array.from(root.querySelectorAll<HTMLElement>('button')).filter(
     (b) => !b.closest('[data-nlk]'),
   )
   return (
     buttons.find((b) => b.classList.contains('create-new-button')) ??
+    buttons.find((b) => SOURCE_TEXT.createNewExact.test((b.getAttribute('aria-label') ?? '').trim())) ??
     buttons.find((b) => SOURCE_TEXT.createNew.test(b.getAttribute('aria-label') ?? '')) ??
     buttons.find((b) => SOURCE_TEXT.createNew.test(b.textContent ?? '')) ??
     null

@@ -25,3 +25,14 @@ input[data-nlk-checkbox] {
   position: relative;
   z-index: 2;
 }
+
+/* 一覧（テーブル）表示: 2026-10-04 の刷新でタイトルが a.project-table-title（display:flex＝
+   ブロックレベル）になり、先頭に注入した label が独立した行に落ちて行高が 52→61px に伸びた。
+   チェックボックス直後のタイトルだけインライン化して同じ行に並べる（requirements.md §8.14）。
+   max-width は label の占有幅（実測 41px = 18 + padding 16 + checkbox の既定 margin 7）に
+   余裕を足した 45px を引いた残り。 */
+td.title-column > label[data-nlk="checkbox-hit"] + a.project-table-title {
+  display: inline-flex;
+  vertical-align: middle;
+  max-width: calc(100% - 45px);
+}

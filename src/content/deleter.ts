@@ -35,9 +35,10 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
   const sleep = deps.delay ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
 
   // ① 対象行を確定する。**ループの外で一度だけ**引く。
-  // 再試行のたびにタイトルで引き直すと、1回目の削除が遅れて成立した隙に
-  // 同名の別行を掴み、選択していないノートブックを消し得る（TOCTOU / #82 codex P1）。
-  // タイトルは一意でない（types.ts）以上、掴んだノードだけを操作し続けるしかない。
+  // 再試行のたびにキーで引き直すと、キーがタイトルにフォールバックしている場合
+  // （一意でない。types.ts）、1回目の削除が遅れて成立した隙に同名の別行を掴み、
+  // 選択していないノートブックを消し得る（TOCTOU / #82 codex P1）。
+  // キーの種類に依らず、掴んだノードだけを操作し続ける。
   const row = await w(() => deps.findRow(target), { timeout })
 
   let lastError: Error | null = null

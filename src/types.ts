@@ -14,6 +14,9 @@ export function isSupportedHost(hostname: string): boolean {
 
 export interface RowIdentity {
   title: string
+  // ノートブック ID（URL の /notebook/<id>）。2026-10-04 実機で全行から取得できる
+  // ようになった（requirements.md §8.14）。取得できない DOM では undefined。
+  id?: string
 }
 
 export interface NotebookTarget extends RowIdentity {
@@ -33,11 +36,13 @@ export interface DeleteResult {
   aborted: boolean
 }
 
-// キーはタイトル。NotebookLM の行 `jslog` は全行で同一の汎用トラッキング記述子
-// （行ごとに一意でない）ため、識別子として使えない。実機確認済み（2026-07-02）。
-// 同名ノートブックは区別できないが実運用ではほぼ一意（既知エッジケース）。
+// キーはノートブック ID（あれば）。同名ノートブックを区別でき、リネームでも変わらない（§8.14）。
+// ID を取れない DOM ではタイトルにフォールバックする: NotebookLM の行 `jslog` は全行で同一の
+// 汎用トラッキング記述子（行ごとに一意でない）ため識別子として使えない（実機確認 2026-07-02）。
+// フォールバック時は同名ノートブックを区別できない（既知エッジケース）。
+// 接頭辞（id: / title:）を分けているので、ID キーの対象がタイトル一致の別行に化けることはない。
 export function makeTarget(id: RowIdentity): NotebookTarget {
-  return { ...id, key: `title:${id.title}` }
+  return { ...id, key: id.id ? `id:${id.id}` : `title:${id.title}` }
 }
 
 export interface ImportProgress {
