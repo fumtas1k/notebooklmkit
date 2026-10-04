@@ -102,6 +102,13 @@ content script（`src/content/`）と background service worker（`src/backgroun
 - **codex が使えない（利用制限等）ときは、サブエージェントによる独立レビューで代替する。** 読み取りとテスト実行のみに限定し、観点（誤削除の経路 / silent failure / テストと実 DOM の乖離 / 古い記述）と、確認済みと推測を分けて返すことを指示する。**レビュー後に破壊的機能へ変更を足したら、その差分でもう一度通す** —— #89 では 1 回目のレビュー後に行の識別をタイトルから ID に変えたため 2 回通し、2 回目で observer が ID 属性の変化を見ていない点などを拾えた。対応しない指摘は issue 化する。
 - **マージ後は post-merge-retro ルーチンを回す**（振り返り→CLAUDE.md/scripts/skills 改善提案→承認で PR）。セッション内 `gh pr merge` ならフックが自動リマインドする（GitHub UI マージは対象外なので手動実行）。
 
+## `.claude/skills/` の運用
+
+- **`.claude/skills/**` は「毎セッション自動注入される指示面」として扱う。** SessionStart hook（`.claude/hooks/session-start-superpowers.sh`）が `using-superpowers/SKILL.md` の全文を `<EXTREMELY_IMPORTANT>` で包んで注入し、そこから他のスキルが呼ばれる。この配下の変更は、リポジトリで Claude Code を使う全員の挙動を静かに変える。**この配下に触れる PR は、差分の内容を必ず読んでからマージする**（上流追従の機械的な更新でも同じ）。
+- **ベンダリングしたスキルは手編集しない。** Superpowers 由来のもの（`SKILL.md` frontmatter に `metadata.github-*` があるディレクトリ。一覧とバージョンは `.claude/skills/THIRD-PARTY-NOTICES.md`）は `gh skill update --all` で上流に追従する。手で直すと次の更新で消えるうえ、上流との差分が追えなくなる。更新したら `THIRD-PARTY-NOTICES.md` の Version も合わせる。
+- **このリポジトリ固有のスキルは編集してよい。** `post-merge-retro/` は上流を持たない自前のスキル（frontmatter に `metadata.github-*` が無い）。
+- hook が有効な JSON を出すことは CI の smoke check で見ている（`ci.yml`）。
+
 ## 計画ドキュメント
 
 `docs/superpowers/specs/` と `docs/superpowers/plans/` に設計仕様と実装計画がある（本リポジトリは Superpowers のブレスト→仕様→計画のワークフローを使う）。フェーズを実装する前に、意図された設計をここで確認すること。

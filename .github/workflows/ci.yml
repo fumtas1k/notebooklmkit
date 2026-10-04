@@ -10,9 +10,11 @@ on:
 permissions:
   contents: read
 
-# 同一ブランチ / PR で連続してプッシュされた場合、実行中の古い CI を中断し最新のみ実行する
+# 同一 PR で連続してプッシュされた場合、実行中の古い CI を中断し最新のみ実行する。
+# push（main / develop）は head_ref が空なので run_id にフォールバックし、実行ごとに別グループに
+# なる（＝連続 push でも先行の CI をキャンセルしない。issue #7）。
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -22,12 +24,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        # サードパーティ Action はタグではなくコミット SHA で固定する（更新は Dependabot。issue #5）
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: "20"
+          # Node バージョンは .nvmrc が単一情報源（issue #6）
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
@@ -41,3 +45,11 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # SessionStart hook は vitest の枠外の bash スクリプトなので、ここで最低限の回帰を見る:
+      # exit 0 / 有効な JSON / 注入本文に using-superpowers のマーカーがあること（issue #11）。
+      - name: Smoke check session-start hook
+        run: |
+          set -o pipefail
+          CLAUDE_PROJECT_DIR="$PWD" bash .claude/hooks/session-start-superpowers.sh \
+            | python3 -c "import json,sys; c=json.load(sys.stdin)['hookSpecificOutput']['additionalContext']; assert 'using-superpowers' in c"
