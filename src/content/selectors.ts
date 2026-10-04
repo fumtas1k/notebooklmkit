@@ -23,9 +23,10 @@ export const SELECTORS = {
   // おすすめ（閲覧者）ノートブックのセクション。表示モードを問わず存在する（§8.14）。
   featuredSection: '.featured-projects-container',
   deleteMenuItem: '.cdk-overlay-container button.mat-mdc-menu-item.delete-button',
-  // 開いている3点メニューのパネルと、その外側クリック受け（透明バックドロップ）。
+  // 開いている行の3点メニューのパネルと、その外側クリック受け（透明バックドロップ）。
   // バックドロップをクリックするとメニューが閉じる（2026-10-04 実機・§8.14）。
-  menuPanel: '.cdk-overlay-container .mat-mdc-menu-panel',
+  // パネルは project-actions-menu に限定し、他のメニュー（アカウント等）には反応しない。
+  menuPanel: '.cdk-overlay-container .mat-mdc-menu-panel.project-actions-menu',
   menuBackdrop: '.cdk-overlay-container .cdk-overlay-backdrop.cdk-overlay-transparent-backdrop',
   confirmDialog: 'mat-dialog-container',
   // 削除確認ダイアログのボタン。2026-08-08 の UI 刷新で
@@ -161,7 +162,8 @@ export function getDeleteMenuItem(root: ParentNode = document): HTMLElement | nu
   return root.querySelector<HTMLElement>(SELECTORS.deleteMenuItem)
 }
 
-// 開いているメニューを閉じるためのバックドロップ（#88）。メニューパネルが開いているときだけ返す。
+// 開いている行の3点メニューを閉じるためのバックドロップ（#88）。そのパネルが開いているときだけ返す
+// （クラスが変わって取れなくなれば null = 閉じないだけで、停止の挙動は変わらない）。
 // ダイアログのバックドロップ（dark）は対象外 —— 押すとダイアログを閉じてしまうため、
 // 透明バックドロップに限定する。複数重なっていれば最前面（文書順で最後）を返す。
 export function getOpenMenuBackdrop(root: ParentNode = document): HTMLElement | null {

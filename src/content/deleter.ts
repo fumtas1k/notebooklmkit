@@ -50,14 +50,15 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
     if (!row.isConnected) return
     // 掴んだノードが生きていても、Angular が別のノートブックへ再利用していれば isConnected は
     // true のまま（#87）。ID キーは一意なので、再試行の入口で「その ID の行が今もこのノードか」を
-    // 確認する。引き直したノードを操作するのではなく同一性の確認だけなので、① の方針と両立する。
-    // タイトルキーは同名の先頭行が返り得るため適用しない。確認から ② のクリックまでは同期で、
-    // 開いたメニュー / ダイアログはその時点のノートブックに束縛される。
-    if (attempt > 1 && target.id) {
-      const current = deps.findRow(target)
-      // ID が一覧から消えた = 前の試行が遅れて成立した。
-      if (!current) return
-      if (current !== row) throw new Error('row node no longer belongs to the target notebook')
+    // 確認し、そう言い切れなければ押さずに止まる。引き直したノードは操作しない（確認だけ）ので、
+    // ① の方針と両立する。タイトルキーは同名の先頭行が返り得るため適用しない。確認から ② の
+    // クリックまでは同期。
+    // findRow の null は「削除された」とは限らない（ID 一致に加えて削除可能行であることも条件で、
+    // 再描画中は一時的に引けない）。成功扱いにすると未削除のまま次の対象へ進むため、別ノードの
+    // 場合と同じく結果不明として停止する（前の試行が実は成立していても失敗として報告される。
+    // 安全側の誤報）。
+    if (attempt > 1 && target.id && deps.findRow(target) !== row) {
+      throw new Error('target row could not be re-identified on retry (outcome unknown)')
     }
     // ② 操作メニューを開く
     const more = deps.getMoreButton(row)

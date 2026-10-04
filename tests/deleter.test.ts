@@ -305,18 +305,24 @@ describe('retry identity check for id-keyed targets (#87)', () => {
     expect(state.confirmClicks).toBe(1)
   })
 
-  it('treats the target as deleted when its id is gone even though the held node is still connected', async () => {
-    const { deps, container } = makeWorld(['A'])
+  // findRow の null は「削除された」とは限らない（実装は ID 一致に加えて削除可能行であることも
+  // 要求するので、再描画で一時的に引けないだけでも null になる）。成功扱いにすると未削除のまま
+  // 次の対象へ進み選択も解除されるため、結果不明として停止する（codex P2）。
+  it('stops as outcome-unknown when the target can no longer be resolved but the held node is still connected', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
     const held = container.children[0] as HTMLElement
     const state = silentFirstConfirm(deps)
-    // 1回目の削除は遅れて成立し、掴んだノードは別ノートブックとして残った（ID は一覧から消えた）。
-    deps.findRow = () => (state.confirmClicks === 0 ? held : null)
+    deps.findRow = (t) =>
+      t.id === 'id-a' ? (state.confirmClicks === 0 ? held : null) : (container.children[1] as HTMLElement)
 
-    const res = await deleteNotebooks([makeTarget({ title: 'A', id: 'id-a' })], deps, {})
-    expect(res.succeeded).toEqual(['id:id-a'])
-    expect(res.failed).toEqual([])
+    const res = await deleteNotebooks(
+      [makeTarget({ title: 'A', id: 'id-a' }), makeTarget({ title: 'B', id: 'id-b' })], deps, {})
+    expect(res.succeeded).toEqual([])
+    expect(res.failed.length).toBe(1)
+    expect(res.failed[0].key).toBe('id:id-a')
+    // 再試行も、次の対象 B への着手もしていない
+    expect(state.moreClicks).toBe(1)
     expect(state.confirmClicks).toBe(1)
-    expect(held.isConnected).toBe(true)
   })
 
   it('still retries on the same node when the id still resolves to it', async () => {

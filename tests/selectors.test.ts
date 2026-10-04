@@ -453,6 +453,14 @@ describe('getOpenMenuBackdrop', () => {
     expect(getOpenMenuBackdrop()).toBeNull()
   })
 
+  // 行の3点メニュー以外（アカウントメニュー等）が開いているだけなら触らない（codex P2）。
+  it('returns null when the open menu is not the project actions menu', () => {
+    document.body.innerHTML = overlay(
+      BACKDROP + '<div class="cdk-overlay-pane"><div class="mat-mdc-menu-panel some-other-menu"></div></div>',
+    )
+    expect(getOpenMenuBackdrop()).toBeNull()
+  })
+
   it('returns the last transparent backdrop when several are stacked', () => {
     document.body.innerHTML = overlay(
       '<div id="first" class="cdk-overlay-backdrop cdk-overlay-transparent-backdrop"></div>' +
