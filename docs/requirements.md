@@ -550,6 +550,29 @@ F2-2（ツールバーアイコン → 新規ノートブック作成）が「�
   透明バックドロップを返す。確認ダイアログの
   バックドロップ（dark）は返さない。
 
+### メニュー / 確認ダイアログと対象行の対応付け（#94・2026-10-04 実機）
+計測はページ内スクリプト（`getDeleteMenuItemFor` と同一ロジックを評価）。確認ダイアログは開いて構造を読んだ後
+キャンセルで閉じており、何も削除していない。ビルドした拡張経由の確認ではない。
+
+- **3点メニューのトリガー** `button.mat-mdc-menu-trigger`（`aria-haspopup="menu"`）は、閉じているとき
+  `aria-expanded="false"`（`aria-controls` なし）、開いている間だけ `aria-expanded="true"` と
+  `aria-controls="mat-menu-panel-N"` を持つ。パネルは `div#mat-menu-panel-N.mat-mdc-menu-panel.project-actions-menu`
+  （`role="menu"`）で、「削除」項目 `button.mat-mdc-menu-item.delete-button` はその中にある。
+  「削除」を押すとトリガーは `aria-expanded="false"` に戻る。
+- **取り違えの再現**: 行 A のメニューを開く → バックドロップで閉じる → 行 B のメニューを開く、とすると、
+  ページ全体から引く旧 `getDeleteMenuItem()` は B の「削除」を返す（A の削除フローがこれを掴むと B を消す）。
+  `getDeleteMenuItemFor(A のトリガー)` は `null`、`getDeleteMenuItemFor(B のトリガー)` だけが項目を返す。
+  おすすめ行のメニュー（「削除」項目なし）ではトリガーが開いていても `null`。
+- **確認ダイアログは対象を示さない。** 本文は「このノートブックを削除しますか？このノートブックとそのすべての
+  コンテンツは、Gemini を含むすべての場所から完全に削除されます。」のみで、タイトルも ID も DOM に無い
+  （`confirm-dialog` > `base-dialog` > `h2.header-title` / `span.message-text` / `div.dialog-footer`。
+  取消は `nb-button.no-button.tertiary-button` > `button`）。内容からは誰のダイアログか判別できないため、
+  deleter は順序で束縛する: (1) メニューを開く前に確認ダイアログが無いことを確認（あれば由来不明として停止）、
+  (2) 自分のトリガーのパネル内の「削除」だけを押す、(3) settle 待機の後、掴んだ確定ボタンがまだ DOM に
+  接続されているときだけ押す（待機中に閉じられていたら押さない）。
+- **残る前提**: (3) の後のクリックまでは同期。確認ダイアログ表示中は dark バックドロップが一覧を覆うので、
+  利用者が別の行のメニューを開くにはまずダイアログを閉じる必要があり、その時点で (3) が効く。
+
 ## 9. スコープ外（当面）
 
 - NotebookLM Enterprise 対応。

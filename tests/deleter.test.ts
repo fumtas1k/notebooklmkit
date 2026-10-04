@@ -14,7 +14,9 @@ function makeWorld(titles: string[]) {
   }
   let menuRow: HTMLElement | null = null
   let dialogRow: HTMLElement | null = null
-  const el = (name: string) => { const e = document.createElement('div'); e.dataset.name = name; return e }
+  // 実 DOM のメニュー項目 / ボタンは document に接続されている。deleter は押す直前に接続を確認する
+  // ので、フェイクも接続しておく（切断済み要素を返すフェイクだと実挙動と乖離する）。
+  const el = (name: string) => { const e = document.createElement('div'); e.dataset.name = name; document.body.appendChild(e); return e }
   const firstRow = (title: string) =>
     ([...container.children] as HTMLElement[]).find((r) => r.dataset.title === title) ?? null
 
@@ -122,6 +124,7 @@ describe('confirm click settling and retry', () => {
   const named = (name: string): HTMLElement => {
     const e = document.createElement('div')
     e.dataset.name = name
+    document.body.appendChild(e)
     return e
   }
 
@@ -270,6 +273,7 @@ describe('retry identity check for id-keyed targets (#87)', () => {
   const named = (name: string): HTMLElement => {
     const e = document.createElement('div')
     e.dataset.name = name
+    document.body.appendChild(e)
     return e
   }
   // 1回目の confirm は「ダイアログが閉じるだけで行は消えない」世界。
@@ -365,5 +369,51 @@ describe('closes the row menu when the delete item never appears (#88)', () => {
     const res = await deleteNotebooks(targets('A'), deps, {})
     expect(res.failed.length).toBe(1)
     expect(res.failed[0].reason).not.toBe('boom')
+  })
+})
+
+// #94: メニュー項目と確認ダイアログは cdk-overlay（ページ全体）から取るので、「自分が開いたもの」で
+// あることを確かめてから押す。削除中に利用者が別の行のメニューを開いても、その行を消さない。
+describe('binds the menu and the confirm dialog to the target row (#94)', () => {
+  it('asks for the delete item of the trigger it clicked', async () => {
+    const { deps } = makeWorld(['A', 'B'])
+    const clicked: HTMLElement[] = []
+    const asked: (HTMLElement | undefined)[] = []
+    const realClick = deps.click
+    const realGet = deps.getDeleteMenuItem
+    deps.click = (e) => { if (e.dataset.name === 'more') clicked.push(e); realClick(e) }
+    deps.getDeleteMenuItem = (trigger) => { asked.push(trigger); return realGet(trigger) }
+    await deleteNotebooks(targets('A', 'B'), deps, {})
+    expect(clicked.length).toBe(2)
+    // 各対象について、押したトリガーそのものを渡して削除項目を引いている
+    expect(new Set(asked)).toEqual(new Set(clicked))
+  })
+
+  it('stops without opening the menu when a confirm dialog is already open', async () => {
+    const { deps, container } = makeWorld(['A'])
+    const clicks: string[] = []
+    deps.click = (e) => { clicks.push(e.dataset.name ?? '') }
+    deps.getConfirmDialog = () => document.createElement('div') // 誰のものか分からないダイアログが開いている
+    const res = await deleteNotebooks(targets('A'), deps, {})
+    expect(clicks).toEqual([])
+    expect(res.failed.length).toBe(1)
+    expect(container.children.length).toBe(1)
+  })
+
+  it('does not click a confirm button that was detached while settling', async () => {
+    const { deps, container } = makeWorld(['A'])
+    const clicks: string[] = []
+    const realClick = deps.click
+    deps.click = (e) => { clicks.push(e.dataset.name ?? ''); realClick(e) }
+    // settle 待機中にダイアログが閉じられた（＝掴んだボタンが DOM から外れた）
+    let confirmEl: HTMLElement | null = null
+    const realGetBtn = deps.getConfirmDeleteButton
+    deps.getConfirmDeleteButton = (d) => (confirmEl = realGetBtn(d))
+    deps.delay = async () => { confirmEl?.remove() }
+    deps.maxAttempts = 1
+    const res = await deleteNotebooks(targets('A'), deps, {})
+    expect(clicks).not.toContain('confirm')
+    expect(res.failed.length).toBe(1)
+    expect(container.children.length).toBe(1)
   })
 })

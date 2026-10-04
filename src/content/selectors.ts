@@ -23,6 +23,8 @@ export const SELECTORS = {
   // おすすめ（閲覧者）ノートブックのセクション。表示モードを問わず存在する（§8.14）。
   featuredSection: '.featured-projects-container',
   deleteMenuItem: '.cdk-overlay-container button.mat-mdc-menu-item.delete-button',
+  deleteMenuItemInPanel: 'button.mat-mdc-menu-item.delete-button',
+  menuPanelAny: '.mat-mdc-menu-panel',
   // 開いている行の3点メニューのパネルと、その外側クリック受け（透明バックドロップ）。
   // バックドロップをクリックするとメニューが閉じる（2026-10-04 実機・§8.14）。
   // パネルは project-actions-menu に限定し、他のメニュー（アカウント等）には反応しない。
@@ -170,6 +172,27 @@ export function getListObserveTarget(root: ParentNode = document): HTMLElement |
   return null
 }
 
+// 押したトリガー（3点メニューボタン）が開いているパネルの中からだけ「削除」項目を取る（#94）。
+// メニューは cdk-overlay-container（ページ全体で 1 つ）に描画されるため、全体から引くと、削除中に
+// 利用者が別の行のメニューを開いたとき、その行の「削除」を掴んで選択していないノートブックを消し得る。
+// 2026-10-04 実機（§8.14）: トリガーは開いている間だけ aria-expanded="true" と
+// aria-controls="mat-menu-panel-N" を持ち、パネルは id="mat-menu-panel-N"。閉じると
+// aria-expanded="false" に戻り aria-controls は外れる。対応が取れなければ推測せず null（＝安全停止）。
+export function getDeleteMenuItemFor(trigger: HTMLElement): HTMLElement | null {
+  if (trigger.getAttribute('aria-expanded') !== 'true') return null
+  const panelId = trigger.getAttribute('aria-controls')
+  if (!panelId) return null
+  const panel = trigger.ownerDocument.getElementById(panelId)
+  if (!panel) return null
+  return (
+    Array.from(panel.querySelectorAll<HTMLElement>(SELECTORS.deleteMenuItemInPanel)).find(
+      (item) => item.closest(SELECTORS.menuPanelAny) === panel,
+    ) ?? null
+  )
+}
+
+// ページ全体から「削除」項目を引く。どの行のメニューかは区別しない —— 削除フローでは
+// getDeleteMenuItemFor を使うこと。実ページでの点検（scripts/bundle-selectors.sh）用に残す。
 export function getDeleteMenuItem(root: ParentNode = document): HTMLElement | null {
   return root.querySelector<HTMLElement>(SELECTORS.deleteMenuItem)
 }

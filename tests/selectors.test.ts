@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   getNotebookRows, getRowIdentity, findDeletableRowByIdentity,
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
-  getListObserveTarget, getCheckboxHost, isDeletableRow, getRowKey, getOpenMenuBackdrop,
+  getListObserveTarget, getCheckboxHost, isDeletableRow, getRowKey, getOpenMenuBackdrop, getDeleteMenuItemFor,
 } from '../src/content/selectors'
 
 const LIST_HTML = `
@@ -467,5 +467,49 @@ describe('getOpenMenuBackdrop', () => {
       '<div id="last" class="cdk-overlay-backdrop cdk-overlay-transparent-backdrop"></div>' + MENU,
     )
     expect(getOpenMenuBackdrop()?.id).toBe('last')
+  })
+})
+
+// #94: 「削除」項目は、押したトリガーが開いているメニューパネルの中からだけ取る。
+// 2026-10-04 実機: トリガーは開いている間 aria-expanded="true" と aria-controls="mat-menu-panel-N" を
+// 持ち、パネルは id="mat-menu-panel-N"。他の行のトリガーは aria-expanded="false"（§8.14）。
+describe('getDeleteMenuItemFor', () => {
+  const page = (triggers: string, panels: string) => `
+    <div id="list">${triggers}</div><div class="cdk-overlay-container">${panels}</div>`
+  const PANEL = (id: string, withDelete = true) => `
+    <div class="cdk-overlay-pane"><div id="${id}" role="menu" class="mat-mdc-menu-panel project-actions-menu">
+      <button class="mat-mdc-menu-item" role="menuitem">名前を変更</button>
+      ${withDelete ? '<button class="mat-mdc-menu-item delete-button" role="menuitem">削除</button>' : ''}
+    </div></div>`
+  const trigger = (id: string) => document.getElementById(id) as HTMLElement
+
+  it('returns the delete item inside the panel the trigger controls', () => {
+    document.body.innerHTML = page(
+      '<button id="a" aria-expanded="true" aria-controls="mat-menu-panel-2"></button>', PANEL('mat-menu-panel-2'))
+    expect(getDeleteMenuItemFor(trigger('a'))?.textContent).toBe('削除')
+  })
+
+  it('returns null when the trigger is not expanded (its menu was closed)', () => {
+    document.body.innerHTML = page(
+      '<button id="a" aria-expanded="false"></button><button id="b" aria-expanded="true" aria-controls="mat-menu-panel-3"></button>',
+      PANEL('mat-menu-panel-3'))
+    // 別の行 b のメニューが開いていて「削除」項目が存在しても、a のものではないので返さない
+    expect(getDeleteMenuItemFor(trigger('a'))).toBeNull()
+    expect(getDeleteMenuItemFor(trigger('b'))).not.toBeNull()
+  })
+
+  it('never returns a delete item from a panel the trigger does not control', () => {
+    document.body.innerHTML = page(
+      '<button id="a" aria-expanded="true" aria-controls="mat-menu-panel-2"></button>',
+      PANEL('mat-menu-panel-2', false) + PANEL('mat-menu-panel-9'))
+    expect(getDeleteMenuItemFor(trigger('a'))).toBeNull()
+  })
+
+  it('returns null when aria-controls is missing or points nowhere (no guessing)', () => {
+    document.body.innerHTML = page(
+      '<button id="a" aria-expanded="true"></button><button id="b" aria-expanded="true" aria-controls="gone"></button>',
+      PANEL('mat-menu-panel-2'))
+    expect(getDeleteMenuItemFor(trigger('a'))).toBeNull()
+    expect(getDeleteMenuItemFor(trigger('b'))).toBeNull()
   })
 })

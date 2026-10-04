@@ -1,6 +1,6 @@
 import {
   getNotebookRows, getRowIdentity, findDeletableRowByIdentity, getRowKey,
-  getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
+  getMoreButton, getDeleteMenuItemFor, getConfirmDialog, getConfirmDeleteButton,
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton, getCreateNewButton, getAudioOverviewButton,
   getAudioGenerationCard, getAudioGenerateButton, SOURCE_TEXT, isSelectableRow, getListObserveTarget,
@@ -173,7 +173,7 @@ export function init(root: ParentNode = document): () => void {
         const deps: DeleterDeps = {
           findRow: (tgt) => findDeletableRowByIdentity(tgt, root),
           getMoreButton,
-          getDeleteMenuItem: () => getDeleteMenuItem(),
+          getDeleteMenuItem: getDeleteMenuItemFor,
           getConfirmDialog: () => getConfirmDialog(),
           getConfirmDeleteButton,
           click: (el) => { safeClick(el) },
