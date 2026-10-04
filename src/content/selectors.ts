@@ -106,11 +106,10 @@ export function isDeletableRow(row: HTMLElement): boolean {
 }
 
 // 選択・削除の対象にできる行か（= 削除可能 かつ 選択キーが空でない）。
-// 行挿入〜タイトル充填の間、ID も取れない行はキーが空（`title:`）になる。この行はチェックボックスも
-// 注入されないので、「すべて選択」/ 対象確定 / 全選択判定の分母から外す（issue #33）。
-// ID が取れていればキーは有効なので、タイトルが一時的に空でも対象のまま（選択済みの行を無言で
-// 対象から落とさない）。その間チェックボックスは未注入になり得るが、充填時に注入側がストアに
-// 合わせて同期する。
+// 行挿入〜タイトル充填の間、ID も取れない行はキーが空（`title:`）になる。チェックボックス注入
+// （row-checkbox.ts）・「すべて選択」・対象確定・全選択判定の分母は、すべてこの同じ規則で
+// 空キーの行を外す（issue #33）。ID が取れていればキーは有効なので、タイトルが一時的に空でも
+// 通常の行として扱う（選択済みの行を無言で対象から落とさない）。
 export function isSelectableRow(row: HTMLElement): boolean {
   if (!isDeletableRow(row)) return false
   const { id, title } = getRowIdentity(row)

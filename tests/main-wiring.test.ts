@@ -688,8 +688,9 @@ describe('init with notebook ids (same-titled notebooks, §8.14)', () => {
   })
 })
 
-// issue #33 / #34: タイトル未充填行（行挿入〜タイトル充填の間）は identity が空になる。
-// チェックボックス注入はこの行をスキップするので、選択・削除対象・同期の各経路も同じ規則に揃える。
+// issue #33 / #34: 行挿入〜タイトル充填の間、ID も取れない行は選択キーが空（`title:`）になる。
+// 規則は 1 つ: 「キーが空の行」はチェックボックス注入・すべて選択・削除対象のどれにも入れない。
+// ID が取れていればキーは有効なので、タイトルが空でもすべての経路で通常の行として扱う。
 describe('rows whose title is not filled yet (#33 / #34)', () => {
   const ROW = (title: string) => `
   <tr mat-row role="row"><td class="title-column"><span class="project-table-title">${title}</span></td>
@@ -712,7 +713,7 @@ describe('rows whose title is not filled yet (#33 / #34)', () => {
     dispose()
   })
 
-  it('buildTargets never targets a row with an empty title even if the empty key is in the store', () => {
+  it('buildTargets never targets a row whose key is empty even if the empty key is in the store', () => {
     document.body.innerHTML = LIST_WITH_EMPTY
     const store = new SelectionStore()
     store.set('title:', true)
@@ -773,7 +774,7 @@ describe('rows whose title is not filled yet (#33 / #34)', () => {
 
   // タイトルは title 属性を優先して読む（§8.14）。属性だけが後から充填される更新順でも
   // observer が拾って注入・件数を同期し直す（codex P2）。
-  it('self-heals when only the title attribute is filled in later', async () => {
+  it('injects for an id-keyed row with an empty title and fills the label when only the title attribute arrives', async () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     root.innerHTML = `
@@ -782,10 +783,16 @@ describe('rows whose title is not filled yet (#33 / #34)', () => {
     <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
 </tbody></table></project-table></div>`
     const dispose = init(root)
-    expect(root.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(0)
+    // ID が取れているのでチェックボックスは出る（すべて選択の対象と一致させる）。読み上げ名はまだ無い。
+    const box = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}="id:abc"]`)
+    expect(box).not.toBeNull()
+    expect(box!.hasAttribute('aria-label')).toBe(false)
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-select-all"]')!.click()
+    expect(box!.checked).toBe(true)
     root.querySelector('.project-table-title')!.setAttribute('title', 'Late')
     await flush()
-    expect(root.querySelector(`[${CHECKBOX_ATTR}="id:abc"]`)).not.toBeNull()
+    expect(box!.getAttribute('aria-label')).toBe('Late')
+    expect(box!.checked).toBe(true)
     dispose()
   })
 
