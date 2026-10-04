@@ -262,3 +262,102 @@ describe('confirm click settling and retry', () => {
     expect(res.succeeded).toEqual(['title:A'])
   })
 })
+
+// #87: 掴んだ行ノードが生きていても、Angular が別のノートブックへ再利用していれば
+// isConnected は true のまま。ID キーのときだけ、各試行の入口で同一性を確認する
+// （引き直して操作するのではなく確認だけ。タイトルキーは一意でないので適用しない）。
+describe('retry identity check for id-keyed targets (#87)', () => {
+  const named = (name: string): HTMLElement => {
+    const e = document.createElement('div')
+    e.dataset.name = name
+    return e
+  }
+  // 1回目の confirm は「ダイアログが閉じるだけで行は消えない」世界。
+  function silentFirstConfirm(deps: DeleterDeps) {
+    const state = { moreClicks: 0, confirmClicks: 0 }
+    let menuOpen = false, dialogOpen = false
+    deps.click = (e) => {
+      const name = e.dataset.name
+      if (name === 'more') { state.moreClicks++; menuOpen = true }
+      else if (name === 'delete') { dialogOpen = true; menuOpen = false }
+      else if (name === 'confirm') { state.confirmClicks++; dialogOpen = false }
+    }
+    deps.getDeleteMenuItem = () => (menuOpen ? named('delete') : null)
+    deps.getConfirmDialog = () => (dialogOpen ? named('dialog') : null)
+    deps.getConfirmDeleteButton = () => named('confirm')
+    return state
+  }
+
+  it('stops without clicking when the held row node now belongs to another notebook', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
+    const held = container.children[0] as HTMLElement
+    const other = container.children[1] as HTMLElement
+    const state = silentFirstConfirm(deps)
+    // 1回目の試行後、対象 ID は別ノードに移った（＝掴んだノードは別ノートブックに再利用された）。
+    deps.findRow = () => (state.confirmClicks === 0 ? held : other)
+
+    const res = await deleteNotebooks([makeTarget({ title: 'A', id: 'id-a' })], deps, {})
+    expect(res.succeeded).toEqual([])
+    expect(res.failed.length).toBe(1)
+    expect(res.failed[0].key).toBe('id:id-a')
+    // 再試行のメニューも確認も押していない
+    expect(state.moreClicks).toBe(1)
+    expect(state.confirmClicks).toBe(1)
+  })
+
+  it('treats the target as deleted when its id is gone even though the held node is still connected', async () => {
+    const { deps, container } = makeWorld(['A'])
+    const held = container.children[0] as HTMLElement
+    const state = silentFirstConfirm(deps)
+    // 1回目の削除は遅れて成立し、掴んだノードは別ノートブックとして残った（ID は一覧から消えた）。
+    deps.findRow = () => (state.confirmClicks === 0 ? held : null)
+
+    const res = await deleteNotebooks([makeTarget({ title: 'A', id: 'id-a' })], deps, {})
+    expect(res.succeeded).toEqual(['id:id-a'])
+    expect(res.failed).toEqual([])
+    expect(state.confirmClicks).toBe(1)
+    expect(held.isConnected).toBe(true)
+  })
+
+  it('still retries on the same node when the id still resolves to it', async () => {
+    const { deps } = makeWorld(['A'])
+    const state = silentFirstConfirm(deps)
+    deps.maxAttempts = 2
+    const res = await deleteNotebooks([makeTarget({ title: 'A', id: 'id-a' })], deps, {})
+    expect(state.confirmClicks).toBe(2)
+    expect(res.failed.length).toBe(1)
+  })
+})
+
+// #88: 「削除」項目が出ない行（削除権限の無いノートブック等）を掴むとタイムアウトで
+// 安全停止するが、開いたメニューを画面に残さない。
+describe('closes the row menu when the delete item never appears (#88)', () => {
+  it('calls closeMenu once and records the failure', async () => {
+    const { deps } = makeWorld(['A', 'B'])
+    deps.getDeleteMenuItem = () => null
+    const closeMenu = vi.fn()
+    deps.closeMenu = closeMenu
+    const res = await deleteNotebooks(targets('A', 'B'), deps, {})
+    expect(closeMenu).toHaveBeenCalledTimes(1)
+    expect(res.succeeded).toEqual([])
+    expect(res.failed.length).toBe(1)
+    expect(res.failed[0].key).toBe('title:A')
+  })
+
+  it('does not call closeMenu on the normal path', async () => {
+    const { deps } = makeWorld(['A'])
+    const closeMenu = vi.fn()
+    deps.closeMenu = closeMenu
+    await deleteNotebooks(targets('A'), deps, {})
+    expect(closeMenu).not.toHaveBeenCalled()
+  })
+
+  it('still records the original failure when closeMenu throws', async () => {
+    const { deps } = makeWorld(['A'])
+    deps.getDeleteMenuItem = () => null
+    deps.closeMenu = () => { throw new Error('boom') }
+    const res = await deleteNotebooks(targets('A'), deps, {})
+    expect(res.failed.length).toBe(1)
+    expect(res.failed[0].reason).not.toBe('boom')
+  })
+})

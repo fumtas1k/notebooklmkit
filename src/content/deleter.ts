@@ -8,6 +8,8 @@ export interface DeleterDeps {
   getConfirmDialog(): HTMLElement | null
   getConfirmDeleteButton(dialog: HTMLElement): HTMLElement | null
   click(el: HTMLElement): void
+  // 「削除」項目が出ずに停止するとき、開いた3点メニューを閉じる（#88）。best-effort。
+  closeMenu?(): void
   waitFor: typeof WaitFor
   timeout?: number
   // 確認ダイアログの「削除」ボタンを見つけてから押すまでの待機（§8.11 / #82）。
@@ -46,12 +48,31 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
     // 前の試行が遅れて成立していれば完了。二度押ししない。
     // 「タイムアウト = 拒否」ではないため、各試行の入口で必ず確認する。
     if (!row.isConnected) return
+    // 掴んだノードが生きていても、Angular が別のノートブックへ再利用していれば isConnected は
+    // true のまま（#87）。ID キーは一意なので、再試行の入口で「その ID の行が今もこのノードか」を
+    // 確認する。引き直したノードを操作するのではなく同一性の確認だけなので、① の方針と両立する。
+    // タイトルキーは同名の先頭行が返り得るため適用しない。確認から ② のクリックまでは同期で、
+    // 開いたメニュー / ダイアログはその時点のノートブックに束縛される。
+    if (attempt > 1 && target.id) {
+      const current = deps.findRow(target)
+      // ID が一覧から消えた = 前の試行が遅れて成立した。
+      if (!current) return
+      if (current !== row) throw new Error('row node no longer belongs to the target notebook')
+    }
     // ② 操作メニューを開く
     const more = deps.getMoreButton(row)
     if (!more) throw new Error('more button not found')
     deps.click(more)
     // ③ メニューの「削除」
-    const del = await w(() => deps.getDeleteMenuItem(), { timeout })
+    let del: HTMLElement
+    try {
+      del = await w(() => deps.getDeleteMenuItem(), { timeout })
+    } catch (err) {
+      // 「削除」項目の無いメニュー（削除権限の無い行など）を開いたまま止まらない（#88）。
+      // 閉じ損ねても停止理由は元のタイムアウトのまま返す。
+      try { deps.closeMenu?.() } catch { /* best-effort */ }
+      throw err
+    }
     deps.click(del)
     // ④ 確認ダイアログの Delete ボタン。
     // mat-dialog-container は先に描画され、中の Delete ボタンは少し遅れて現れるため、
