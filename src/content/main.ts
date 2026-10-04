@@ -32,14 +32,16 @@ export const VERSION = '0.1.0'
 // （読み取りスキャン＋ checked 代入は毎発火走るが O(行数) で有界）。
 // attributes は選択キーの元になるノートブック ID（一覧 = a の href / カード = タイトル span の id。
 // §8.14）の変化に追従するため。Angular が行ノードを同名の別ノートブックへ付け替えると変化は
-// 属性だけになり、childList / characterData では観測できない。attributeFilter で絞るので、
-// 自拡張が書く data-nlk-checkbox / aria-label では自己発火しない。
+// 属性だけになり、childList / characterData では観測できない。title はタイトルの読み取り元
+// （getRowIdentity は title 属性を優先）で、属性だけが後から充填される更新順でも未充填行の
+// 注入・件数を同期し直すため。attributeFilter で絞るので、自拡張が書く
+// data-nlk-checkbox / aria-label では自己発火しない。
 const LIST_OBSERVE_OPTIONS: MutationObserverInit = {
   childList: true,
   subtree: true,
   characterData: true,
   attributes: true,
-  attributeFilter: ['href', 'id'],
+  attributeFilter: ['href', 'id', 'title'],
 }
 
 export function buildTargets(store: SelectionStore, root: ParentNode = document): NotebookTarget[] {
@@ -149,7 +151,11 @@ export function init(root: ParentNode = document): () => void {
       // 多重集合レベルの安全網（ID キーなら同名の置換も検出できる。タイトルキーに
       // フォールバックした場合は検出できない —— types.ts 参照）。検証通過後は確認時の順序を
       // 保つため targets をそのまま使う。
-      if (!sameTargetKeys(targets, buildTargets(store, root))) {
+      // 対象が同じでも、確認中に未選択行が消えて「選択 = 全件」になっていれば、件数タイプ確認を
+      // 経ていない弱い確認のまま全件削除に進むことになるので中止する（行動時点の真で判定する）。
+      const becameSelectAll =
+        !isSelectAll && targets.length === getNotebookRows(root).filter(isSelectableRow).length
+      if (!sameTargetKeys(targets, buildTargets(store, root)) || becameSelectAll) {
         bar.setProgress(t('selectionChanged'))
         return
       }
@@ -292,9 +298,6 @@ export function initImport(root: ParentNode = document): () => void {
 
 function syncCheckboxes(store: SelectionStore, root: ParentNode): void {
   for (const row of getNotebookRows(root)) {
-    // タイトルが一時的に空の行は同期しない（injectRowCheckboxes と同じ規則。空キーで
-    // checked を上書きしない。充填時の mutation で注入側が同期し直す。issue #33）。
-    if (!getRowIdentity(row).title) continue
     const key = getRowKey(row)
     const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
     if (box) box.checked = store.has(key)

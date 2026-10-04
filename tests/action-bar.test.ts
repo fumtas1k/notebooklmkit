@@ -118,4 +118,18 @@ describe('action bar', () => {
     expect(del.hidden).toBe(false)
     expect(del.disabled).toBe(false)
   })
+
+  // 前回値のキャッシュではなく実 DOM と比較するので、外から書き換えられた表示も refresh() で直る（codex P3）。
+  it('repairs the DOM on refresh() when something else altered it', () => {
+    const store = new SelectionStore()
+    store.replaceAll(['a'])
+    const bar = mountActionBar({ store, t, handlers: noop })
+    const count = document.querySelector('[data-nlk="bar-count"]')!
+    const del = document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!
+    count.textContent = 'stale'
+    del.disabled = true
+    bar.refresh()
+    expect(count.textContent).toContain('1')
+    expect(del.disabled).toBe(false)
+  })
 })

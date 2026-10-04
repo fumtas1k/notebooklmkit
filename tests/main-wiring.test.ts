@@ -720,16 +720,58 @@ describe('rows whose title is not filled yet (#33 / #34)', () => {
     expect(buildTargets(store).map((t) => t.key)).toEqual(['title:A'])
   })
 
-  it('clear-all keeps the checked state of a row whose title is transiently empty (same rule as injection)', () => {
+  // チェックボックスの表示は常にストアに従う。タイトルが一時的に空の行でも「すべて解除」で
+  // チェックが残ると、見た目は選択済みなのに削除されない表示ずれが固定化する（codex P2）。
+  it('clear-all unchecks a selected row even while its title is transiently empty', () => {
     const root = document.createElement('div')
     root.innerHTML = LIST
     const dispose = init(root)
     const boxA = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}="title:A"]`)!
     boxA.checked = true
-    // タイトルが一時的に空になった行は、注入側と同じく同期をスキップする
+    boxA.dispatchEvent(new Event('change'))
     root.querySelector('.project-table-title')!.textContent = ''
     document.querySelector<HTMLButtonElement>('[data-nlk="bar-clear-all"]')!.click()
-    expect(boxA.checked).toBe(true)
+    expect(boxA.checked).toBe(false)
+    dispose()
+  })
+
+  // タイトルは title 属性を優先して読む（§8.14）。属性だけが後から充填される更新順でも
+  // observer が拾って注入・件数を同期し直す（codex P2）。
+  it('self-heals when only the title attribute is filled in later', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    root.innerHTML = `
+<div class="all-projects-container"><project-table><table class="project-table"><tbody>
+  <tr mat-row role="row"><td class="title-column"><a class="project-table-title" href="/notebook/abc" title=""></a></td>
+    <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+</tbody></table></project-table></div>`
+    const dispose = init(root)
+    expect(root.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(0)
+    root.querySelector('.project-table-title')!.setAttribute('title', 'Late')
+    await flush()
+    expect(root.querySelector(`[${CHECKBOX_ATTR}="id:abc"]`)).not.toBeNull()
+    dispose()
+  })
+
+  // 確認時点では一部選択（件数タイプ確認なし）でも、確認中に未選択行が選択可能でなくなり
+  // 「選択 = 全件」になったら、弱い確認のまま進めない（codex P2）。
+  it('aborts when the selection became select-all while the plain confirm dialog was open', async () => {
+    vi.mocked(deleteNotebooks).mockClear()
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    const dispose = init(root)
+    const boxes = root.querySelectorAll<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
+    boxes[0].checked = true
+    boxes[0].dispatchEvent(new Event('change'))
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.click()
+    expect(document.querySelector('[data-nlk="confirm-dialog"]')).not.toBeNull()
+    // 未選択の B が一覧から消える（別タブでの削除など）→ 選択 A が全件になる
+    root.querySelectorAll('tr[mat-row]')[1].remove()
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.click()
+    await flush()
+    expect(deleteNotebooks).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-nlk="bar-progress"]')!.textContent)
+      .toMatch(/削除対象の一覧が変わった|notebooks to delete changed/)
     dispose()
   })
 
