@@ -38,42 +38,84 @@ async function deleteOne(target: NotebookTarget, deps: DeleterDeps): Promise<voi
   const w = deps.waitFor
   const sleep = deps.delay ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
 
-  // ① 対象行を確定する。**ループの外で一度だけ**引く。
-  // 再試行のたびにキーで引き直すと、キーがタイトルにフォールバックしている場合
-  // （一意でない。types.ts）、1回目の削除が遅れて成立した隙に同名の別行を掴み、
-  // 選択していないノートブックを消し得る（TOCTOU / #82 codex P1）。
-  // キーの種類に依らず、掴んだノードだけを操作し続ける。
-  const row = await w(() => deps.findRow(target), { timeout })
+  // ① 対象行を確定する。
+  // **この対象に対して一度でもクリックした後は引き直さない。** 再試行のたびにキーで引き直すと、
+  // キーがタイトルにフォールバックしている場合（一意でない。types.ts）、1回目の削除が遅れて成立
+  // した隙に同名の別行を掴み、選択していないノートブックを消し得る（TOCTOU / #82 codex P1）。
+  // キーの種類に依らず、最初に押したノードだけを操作し続ける。
+  let row: HTMLElement
+  // ID キーの 1 回目で既に押した3点メニュー（下の openFirstMenu）。ループの 1 回目はこれを使う。
+  let opened: HTMLElement | null = null
+  if (target.id) {
+    // ID キーの 1 回目は、行の特定と ② のクリックを分けない（#113）。行を先に掴んでから確認
+    // ダイアログの消滅を待つと、待機（最長 timeout。直前の件の削除直後＝一覧の再描画と重なる）の
+    // 間に、掴んだノードが別のノートブックへ再利用されても気付かずにそのメニューを押す。
+    // そこで「確認ダイアログが無い」「その ID の行がいま引ける」を確かめた**同じ同期ブロック**で
+    // メニューを押す（下の関数は同期。await を足さないこと）。条件が揃わない間は何も押さずに
+    // ポーリングを続け、毎回 ID で引き直す —— まだ何も押していないので、掴み直しても #82 の
+    // 不変条件は崩れない（ID は一意）。再描画中の一時的な null でも偽の失敗にならない。
+    // 揃わないまま timeout したら、何も押さずに失敗として停止する。
+    let dialogOpen = false
+    const openFirstMenu = (): { row: HTMLElement; more: HTMLElement } | null => {
+      dialogOpen = deps.getConfirmDialog() != null
+      if (dialogOpen) return null
+      const found = deps.findRow(target)
+      if (!found) return null
+      const more = deps.getMoreButton(found)
+      if (!more) throw new Error('more button not found')
+      deps.click(more)
+      return { row: found, more }
+    }
+    const first = await w(openFirstMenu, { timeout }).catch((err) => {
+      // 最後まで確認ダイアログが残っていたなら、由来不明のダイアログとして報告する（#94）。
+      if (dialogOpen) throw new Error('a confirm dialog is already open (unknown origin)')
+      throw err
+    })
+    row = first.row
+    opened = first.more
+  } else {
+    // タイトルキーは一意でないので、同一性の確認も掴み直しもしない。一度だけ引く。
+    row = await w(() => deps.findRow(target), { timeout })
+  }
 
   let lastError: Error | null = null
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // 前の試行が遅れて成立していれば完了。二度押ししない。
-    // 「タイムアウト = 拒否」ではないため、各試行の入口で必ず確認する。
-    if (!row.isConnected) return
-    // 確認ダイアログは本文に対象のタイトルも ID も出さない（§8.14）ので、内容からは誰のものか
-    // 判別できない。「開始時点で確認ダイアログが無い」ことを確かめ、以降に現れたものを自分が開いた
-    // ものとして扱う（#94）。既に開いているなら由来が分からないので押さずに止まる。
-    // 直前の件のダイアログが閉じ切っていないだけのこともある（行が先に消える）ので、消えるのは待つ。
-    await w(() => (deps.getConfirmDialog() ? null : true), { timeout }).catch(() => {
-      throw new Error('a confirm dialog is already open (unknown origin)')
-    })
-    // 掴んだノードが生きていても、Angular が別のノートブックへ再利用していれば isConnected は
-    // true のまま（#87）。ID キーは一意なので、再試行では「その ID の行が今もこのノードか」を
-    // 確認し、そう言い切れなければ押さずに止まる。引き直したノードは操作しない（確認だけ）ので、
-    // ① の方針と両立する。タイトルキーは同名の先頭行が返り得るため適用しない。
-    // 確認は上の待機の**後**に置く: 待機は最長 timeout まで伸び、その間にノードが再利用され得る
-    // （#110）。ここから ② のクリックまでは同期（間に await を足さないこと）。
-    // findRow の null は「削除された」とは限らない（ID 一致に加えて削除可能行であることも条件で、
-    // 再描画中は一時的に引けない）。成功扱いにすると未削除のまま次の対象へ進むため、別ノードの
-    // 場合と同じく結果不明として停止する（前の試行が実は成立していても失敗として報告される。
-    // 安全側の誤報）。
-    if (attempt > 1 && target.id && deps.findRow(target) !== row) {
-      throw new Error('target row could not be re-identified on retry (outcome unknown)')
+    let more: HTMLElement
+    if (opened) {
+      // ID キーの 1 回目: ② は上で済んでいる。
+      more = opened
+      opened = null
+    } else {
+      // 前の試行が遅れて成立していれば完了。二度押ししない。
+      // 「タイムアウト = 拒否」ではないため、各試行の入口で必ず確認する。
+      if (!row.isConnected) return
+      // 確認ダイアログは本文に対象のタイトルも ID も出さない（§8.14）ので、内容からは誰のものか
+      // 判別できない。「開始時点で確認ダイアログが無い」ことを確かめ、以降に現れたものを自分が
+      // 開いたものとして扱う（#94）。既に開いているなら由来が分からないので押さずに止まる。
+      // 直前の件のダイアログが閉じ切っていないだけのこともある（行が先に消える）ので、消えるのは待つ。
+      await w(() => (deps.getConfirmDialog() ? null : true), { timeout }).catch(() => {
+        throw new Error('a confirm dialog is already open (unknown origin)')
+      })
+      // 掴んだノードが生きていても、Angular が別のノートブックへ再利用していれば isConnected は
+      // true のまま（#87）。ID キーは一意なので、再試行では「その ID の行が今もこのノードか」を
+      // 確認し、そう言い切れなければ押さずに止まる。引き直したノードは操作しない（確認だけ）ので、
+      // ① の方針と両立する。1 回目と違って掴み直さないのは、既にこのノードを押しており、結果が
+      // 分からないから。タイトルキーは同名の先頭行が返り得るため適用しない。
+      // 確認は上の待機の**後**に置く: 待機は最長 timeout まで伸び、その間にノードが再利用され得る
+      // （#110）。ここから ② のクリックまでは同期（間に await を足さないこと）。
+      // findRow の null は「削除された」とは限らない（ID 一致に加えて削除可能行であることも条件で、
+      // 再描画中は一時的に引けない）。成功扱いにすると未削除のまま次の対象へ進むため、別ノードの
+      // 場合と同じく結果不明として停止する（前の試行が実は成立していても失敗として報告される。
+      // 安全側の誤報）。
+      if (attempt > 1 && target.id && deps.findRow(target) !== row) {
+        throw new Error('target row could not be re-identified on retry (outcome unknown)')
+      }
+      // ② 操作メニューを開く
+      const btn = deps.getMoreButton(row)
+      if (!btn) throw new Error('more button not found')
+      deps.click(btn)
+      more = btn
     }
-    // ② 操作メニューを開く
-    const more = deps.getMoreButton(row)
-    if (!more) throw new Error('more button not found')
-    deps.click(more)
     // ③ メニューの「削除」
     let del: HTMLElement
     try {

@@ -427,6 +427,142 @@ describe('retry identity check for id-keyed targets (#87)', () => {
   })
 })
 
+// #113: 1 回目の試行も、メニューを押す前に「確認ダイアログが無くなるのを待つ」。直前の件の削除直後
+// （＝一覧の再描画と重なる時間帯）なので、行を先に掴んで待つと、待機中にそのノードが別のノートブックへ
+// 再利用されたとき選択していないものを消す。ID キーでは、行の特定・ダイアログ不在の確認・メニューの
+// クリックを同じ同期ブロックで行い、まだ何も押していない間は毎回 ID で引き直す。
+describe('first-attempt identity check for id-keyed targets (#113)', () => {
+  // 直前の件のダイアログが残っている世界。順序は実時間ではなく、確認ダイアログを見に来た回数で固定する:
+  // 1 回目は開いたまま、2 回目で閉じ、その瞬間に onClose で一覧を書き換える
+  // （＝消滅待ちに入った後・メニュークリックの前）。開いている間は同じノードを返す。
+  function lingeringDialogAtStart(deps: DeleterDeps, onClose: () => void) {
+    const state = { moreRows: [] as HTMLElement[], clicks: [] as string[] }
+    const stale = document.createElement('div')
+    const realDialog = deps.getConfirmDialog
+    const realClick = deps.click
+    let lingering = true, polls = 0
+    deps.getConfirmDialog = () => {
+      if (!lingering) return realDialog()
+      if (++polls < 2) return stale
+      lingering = false
+      onClose()
+      return realDialog()
+    }
+    deps.click = (e) => {
+      state.clicks.push(e.dataset.name ?? '')
+      if (e.dataset.name === 'more') state.moreRows.push((e as any)._row)
+      realClick(e)
+    }
+    return state
+  }
+  const idA = () => makeTarget({ title: 'A', id: 'id-a' })
+  const idB = () => makeTarget({ title: 'B', id: 'id-b' })
+
+  it('does not open the menu of the originally found node when the id moves to another node while waiting', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
+    const original = container.children[0] as HTMLElement
+    const moved = container.children[1] as HTMLElement
+    let current: HTMLElement | null = original
+    // 待機中に対象 ID は別ノードへ移った（＝最初のノードは別のノートブックに再利用された）。
+    const state = lingeringDialogAtStart(deps, () => { current = moved })
+    deps.findRow = () => current
+
+    const res = await deleteNotebooks([idA()], deps, {})
+    // 押したのは、押す時点でその ID を持っていたノードだけ
+    expect(state.moreRows).toEqual([moved])
+    expect(original.isConnected).toBe(true)
+    expect(moved.isConnected).toBe(false)
+    expect(res.succeeded).toEqual(['id:id-a'])
+    expect(res.failed).toEqual([])
+  })
+
+  it('re-resolves and deletes when the id temporarily stops resolving while waiting (no false failure)', async () => {
+    const { deps, container } = makeWorld(['A'])
+    const original = container.children[0] as HTMLElement
+    const fresh = document.createElement('div'); fresh.dataset.title = 'A'
+    let current: HTMLElement | null = original
+    let nullPolls = 0
+    // 再描画: 元のノードは外れ、しばらく引けず、その後に同じ ID の行が新しいノードで現れる。
+    const state = lingeringDialogAtStart(deps, () => { original.remove(); current = null })
+    deps.timeout = 1000 // 既定の 200ms はポーリング 3 回分しかない。引けない回を挟む余裕を取る
+    deps.findRow = () => {
+      if (current || original.isConnected) return current
+      if (++nullPolls < 3) return null
+      container.appendChild(fresh)
+      return (current = fresh)
+    }
+
+    const res = await deleteNotebooks([idA()], deps, {})
+    expect(nullPolls).toBe(3)
+    expect(state.moreRows).toEqual([fresh])
+    expect(fresh.isConnected).toBe(false)
+    expect(res.succeeded).toEqual(['id:id-a'])
+    expect(res.failed).toEqual([])
+  })
+
+  it('stops without clicking anything when the id never resolves again, and does not move on', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
+    const original = container.children[0] as HTMLElement
+    let current: HTMLElement | null = original
+    const state = lingeringDialogAtStart(deps, () => { current = null })
+    deps.findRow = (t) => (t.id === 'id-a' ? current : (container.children[1] as HTMLElement))
+
+    const res = await deleteNotebooks([idA(), idB()], deps, {})
+    expect(state.clicks).toEqual([])
+    expect(res.succeeded).toEqual([])
+    expect(res.failed.length).toBe(1)
+    expect(res.failed[0].key).toBe('id:id-a')
+    expect(container.children.length).toBe(2)
+  })
+
+  it('stops without clicking when an unknown confirm dialog stays open (id key)', async () => {
+    const { deps, container } = makeWorld(['A'])
+    const clicks: string[] = []
+    const stale = document.createElement('div')
+    deps.click = (e) => { clicks.push(e.dataset.name ?? '') }
+    deps.getConfirmDialog = () => stale
+    const res = await deleteNotebooks([idA()], deps, {})
+    expect(clicks).toEqual([])
+    expect(res.failed.length).toBe(1)
+    expect(res.failed[0].reason).toMatch(/already open/)
+    expect(container.children.length).toBe(1)
+  })
+
+  // この対象に対して一度でも押した後は引き直さない（#82）。1 回目に押したノードだけを操作し続ける。
+  it('keeps operating on the node it clicked first; retries never switch to a re-resolved node', async () => {
+    const { deps, container } = makeWorld(['A', 'B'])
+    const first = container.children[0] as HTMLElement
+    const other = container.children[1] as HTMLElement
+    const moreRows: HTMLElement[] = []
+    let menuOpen = false, dialogOpen = false, confirmClicks = 0
+    deps.click = (e) => {
+      const name = e.dataset.name
+      if (name === 'more') { moreRows.push((e as any)._row); menuOpen = true }
+      else if (name === 'delete') { dialogOpen = true; menuOpen = false }
+      else if (name === 'confirm') { confirmClicks++; dialogOpen = false } // 行は消えない
+    }
+    deps.getDeleteMenuItem = () => (menuOpen ? namedEl('delete') : null)
+    deps.getConfirmDialog = () => dlg(dialogOpen)
+    deps.getConfirmDeleteButton = () => namedEl('confirm')
+    // 1 回目のクリック後、対象 ID は別ノードで引けるようになる。
+    deps.findRow = () => (confirmClicks === 0 ? first : other)
+
+    const res = await deleteNotebooks([idA()], deps, {})
+    expect(moreRows).toEqual([first])
+    expect(confirmClicks).toBe(1)
+    expect(res.failed.length).toBe(1)
+    expect(res.failed[0].reason).toMatch(/re-identified/)
+    expect(container.children.length).toBe(2)
+  })
+})
+
+function namedEl(name: string): HTMLElement {
+  const e = document.createElement('div')
+  e.dataset.name = name
+  document.body.appendChild(e)
+  return e
+}
+
 // #88: 「削除」項目が出ない行（削除権限の無いノートブック等）を掴むとタイムアウトで
 // 安全停止するが、開いたメニューを画面に残さない。
 describe('closes the row menu when the delete item never appears (#88)', () => {
