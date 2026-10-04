@@ -720,6 +720,42 @@ describe('rows whose title is not filled yet (#33 / #34)', () => {
     expect(buildTargets(store).map((t) => t.key)).toEqual(['title:A'])
   })
 
+  // 除外するのは「キーが空になる行」だけ。ID が取れていればキーは有効なので、選択済みの行の
+  // タイトルが一時的に空になっても対象から無言で落とさない（codex P2）。
+  it('keeps a selected id-keyed row as a target even while its title is transiently empty', () => {
+    document.body.innerHTML = `
+<div class="all-projects-container"><project-table><table class="project-table"><tbody>
+  <tr mat-row role="row"><td class="title-column"><a class="project-table-title" href="/notebook/abc" title=""></a></td>
+    <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>
+</tbody></table></project-table></div>`
+    const store = new SelectionStore()
+    store.set('id:abc', true)
+    expect(buildTargets(store).map((t) => t.key)).toEqual(['id:abc'])
+  })
+
+  // 件数タイプ確認を既に経ている（10 件以上）なら、確認中に「選択 = 全件」へ変わっても中止しない。
+  // 中止するのは確認強度が 弱 → 強 に変わった場合だけ（codex P3）。
+  it('does not abort when select-all is reached after a strong confirm was already given', async () => {
+    vi.mocked(deleteNotebooks).mockClear()
+    vi.mocked(deleteNotebooks).mockResolvedValue({ succeeded: [], failed: [], aborted: false })
+    const root = document.createElement('div')
+    const names = Array.from({ length: 11 }, (_, i) => `N${i}`)
+    root.innerHTML = `<div class="all-projects-container"><project-table><table class="project-table"><tbody>${names.map(ROW).join('')}</tbody></table></project-table></div>`
+    const dispose = init(root)
+    const boxes = root.querySelectorAll<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
+    for (let i = 0; i < 10; i++) { boxes[i].checked = true; boxes[i].dispatchEvent(new Event('change')) }
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.click()
+    const input = document.querySelector<HTMLInputElement>('[data-nlk="confirm-dialog"] input')!
+    input.value = '10'
+    input.dispatchEvent(new Event('input'))
+    // 未選択の 1 件が消えて「選択 = 全件」になる
+    root.querySelectorAll('tr[mat-row]')[10].remove()
+    document.querySelector<HTMLButtonElement>('[data-nlk="confirm-ok"]')!.click()
+    await flush()
+    expect(deleteNotebooks).toHaveBeenCalledTimes(1)
+    dispose()
+  })
+
   // チェックボックスの表示は常にストアに従う。タイトルが一時的に空の行でも「すべて解除」で
   // チェックが残ると、見た目は選択済みなのに削除されない表示ずれが固定化する（codex P2）。
   it('clear-all unchecks a selected row even while its title is transiently empty', () => {
