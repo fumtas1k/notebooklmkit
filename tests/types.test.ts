@@ -6,6 +6,15 @@ describe('makeTarget', () => {
   it('derives a title-based key', () => {
     expect(makeTarget({ title: 'A' }).key).toBe('title:A')
   })
+  it('prefers the notebook id over the title when available', () => {
+    expect(makeTarget({ title: 'A', id: 'abc' }).key).toBe('id:abc')
+  })
+  it('same-titled notebooks with different ids get distinct keys', () => {
+    expect(makeTarget({ title: 'A', id: 'x' }).key).not.toBe(makeTarget({ title: 'A', id: 'y' }).key)
+  })
+  it('an id key never collides with a title key', () => {
+    expect(makeTarget({ title: 'abc' }).key).not.toBe(makeTarget({ title: 'x', id: 'abc' }).key)
+  })
   it('distinct titles produce distinct keys', () => {
     expect(makeTarget({ title: 'A' }).key).not.toBe(makeTarget({ title: 'B' }).key)
   })

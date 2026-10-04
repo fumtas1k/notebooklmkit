@@ -349,3 +349,38 @@ describe('injectRowCheckboxes', () => {
     expect(row.querySelector('label[data-nlk="checkbox-hit"]')).toBeNull()
   })
 })
+
+describe('injectRowCheckboxes with notebook ids (§8.14)', () => {
+  const MORE = `<project-action-button><nb-icon-button class="project-button-more"><button></button></nb-icon-button></project-action-button>`
+  const card = (id: string, title: string) => `
+    <project-button class="project-button"><mat-card>
+      <div class="project-button-box"><div class="project-button-box-left"></div>${MORE}</div>
+      <div><span class="project-button-title" id="project-${id}-title">${title}</span></div>
+    </mat-card></project-button>`
+
+  it('checking one of two same-titled notebooks selects only that one', () => {
+    document.body.innerHTML = `<div class="my-projects-container">${card('id-a', 'Same')}${card('id-b', 'Same')}</div>`
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const boxes = Array.from(document.querySelectorAll<HTMLInputElement>(`[${CHECKBOX_ATTR}]`))
+    expect(boxes.length).toBe(2)
+    boxes[0].checked = true
+    boxes[0].dispatchEvent(new Event('change'))
+    expect(store.keys()).toEqual(['id:id-a'])
+    injectRowCheckboxes(store)
+    expect(boxes.map((b) => b.checked)).toEqual([true, false])
+  })
+
+  it('keeps the selection and updates aria-label when an id-keyed notebook is renamed', () => {
+    document.body.innerHTML = `<div class="my-projects-container">${card('id-a', 'Old')}</div>`
+    const store = new SelectionStore()
+    injectRowCheckboxes(store)
+    const box = document.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)!
+    store.set('id:id-a', true)
+    document.querySelector('span.project-button-title')!.textContent = 'New'
+    injectRowCheckboxes(store)
+    expect(box.checked).toBe(true)
+    expect(box.getAttribute('aria-label')).toBe('New')
+    expect(box.getAttribute(CHECKBOX_ATTR)).toBe('id:id-a')
+  })
+})

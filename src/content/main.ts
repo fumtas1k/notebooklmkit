@@ -1,5 +1,5 @@
 import {
-  getNotebookRows, getRowIdentity, findRowByIdentity, getRowKey,
+  getNotebookRows, getRowIdentity, findDeletableRowByIdentity, getRowKey,
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton, getCreateNewButton, getAudioOverviewButton,
@@ -30,16 +30,22 @@ export const VERSION = '0.1.0'
 // リネームフロー等で追従するため（issue #28）。churn 増のうち属性書き込みは
 // row-checkbox.ts の「キー変化時のみ書き込み」ガード（PR #27）が抑制する
 // （読み取りスキャン＋ checked 代入は毎発火走るが O(行数) で有界）。
+// attributes は選択キーの元になるノートブック ID（一覧 = a の href / カード = タイトル span の id。
+// §8.14）の変化に追従するため。Angular が行ノードを同名の別ノートブックへ付け替えると変化は
+// 属性だけになり、childList / characterData では観測できない。attributeFilter で絞るので、
+// 自拡張が書く data-nlk-checkbox / aria-label では自己発火しない。
 const LIST_OBSERVE_OPTIONS: MutationObserverInit = {
   childList: true,
   subtree: true,
   characterData: true,
+  attributes: true,
+  attributeFilter: ['href', 'id'],
 }
 
 export function buildTargets(store: SelectionStore, root: ParentNode = document): NotebookTarget[] {
   const selected = new Set(store.keys())
   return getNotebookRows(root)
-    // 削除不可行（moreButton 無し = おすすめ/Reader 行）は対象から除外する（防御。issue #23）。
+    // 削除不可行（おすすめ/Reader 行。判定は isDeletableRow / §8.14）は対象から除外する（防御。issue #23）。
     // 通常経路ではチェックボックスが注入されないため選択され得ないが、明示除外で意図を固定する。
     .filter(isDeletableRow)
     .map((row) => makeTarget(getRowIdentity(row)))
@@ -47,7 +53,8 @@ export function buildTargets(store: SelectionStore, root: ParentNode = document)
 }
 
 // confirm 表示中に選択・一覧が変化していないかの検証に使う（issue #13）。
-// キーはタイトル由来で重複し得る（同名ノートブック）ため、多重集合として比較する。
+// キーは ID 由来なら一意だが、タイトルにフォールバックした場合は重複し得る（同名ノートブック。
+// types.ts）ため、多重集合として比較する。
 // 順序は比較しない（削除順が変わるだけで対象集合は同じ）。
 export function sameTargetKeys(a: NotebookTarget[], b: NotebookTarget[]): boolean {
   if (a.length !== b.length) return false
@@ -79,7 +86,7 @@ export function init(root: ParentNode = document): () => void {
     count: () => buildTargets(store, root).length,
     handlers: {
       onSelectAll: () => {
-        // 削除不可行（moreButton 無し = おすすめ/Reader 行）は選択に含めない（issue #23）。
+        // 削除不可行（おすすめ/Reader 行。判定は isDeletableRow / §8.14）は選択に含めない（issue #23）。
         store.replaceAll(getNotebookRows(root).filter(isDeletableRow).map((r) => getRowKey(r)))
         syncCheckboxes(store, root)
       },
@@ -137,8 +144,8 @@ export function init(root: ParentNode = document): () => void {
       // confirm 表示中に選択・一覧が変化していれば中止する（issue #13）。
       // 削除は取り消し不可のため、古いスナップショットのまま進めない。
       // フォーカストラップ（confirm-dialog.ts）が主経路を塞ぎ、こちらはキー
-      // 多重集合レベルの安全網（同名タイトルの置換までは検出できない ——
-      // タイトル識別の既知の制約。types.ts 参照）。検証通過後は確認時の順序を
+      // 多重集合レベルの安全網（ID キーなら同名の置換も検出できる。タイトルキーに
+      // フォールバックした場合は検出できない —— types.ts 参照）。検証通過後は確認時の順序を
       // 保つため targets をそのまま使う。
       if (!sameTargetKeys(targets, buildTargets(store, root))) {
         bar.setProgress(t('selectionChanged'))
@@ -153,7 +160,7 @@ export function init(root: ParentNode = document): () => void {
       bar.setBusy(true)
       try {
         const deps: DeleterDeps = {
-          findRow: (tgt) => findRowByIdentity(tgt, root),
+          findRow: (tgt) => findDeletableRowByIdentity(tgt, root),
           getMoreButton,
           getDeleteMenuItem: () => getDeleteMenuItem(),
           getConfirmDialog: () => getConfirmDialog(),

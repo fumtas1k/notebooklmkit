@@ -11,9 +11,9 @@ UI が変わったら §0 で再検証し、`src/content/selectors.ts` だけを
 
 2026-07-03 時点で確認済みの実 DOM。UI 変更が疑われたら DevTools で以下を再確認する:
 
-- [x] ソース追加ボタン: `button.add-source-button`（`aria-label="ソースを追加"`）が左ソースパネルにある
+- [x] ソース追加ボタン: `aria-label="ソースを追加"` の `button` が左ソースパネルにある（2026-10-04 に `add-source-button` クラスは消滅。requirements.md §8.13）
 - [x] クリックで `mat-dialog-container` が出る
-- [x] 種別ボタン「ウェブサイト」は `button.drop-zone-icon-button`（4種別共通クラス）
+- [x] 種別ボタン「ウェブサイト」は `button.source-action-button`（種別共通クラス。2026-10-04 に `drop-zone-icon-button` から変更。requirements.md §8.13）
 - [x] チップクリック後、`textarea[formcontrolname="urls"]`（placeholder「リンクを貼り付ける」）が出る
 - [x] 「挿入」ボタンは `button[type="button"]`（テキスト「挿入」/ "Insert"）で URL 入力により有効化される
 - [x] 挿入後にダイアログが閉じ、ソース一覧に追加される

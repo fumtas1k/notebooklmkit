@@ -13,7 +13,7 @@ export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = do
     // タイトル充填時の characterData / childList 変化で observer が再発火し、
     // そこで注入・同期される。
     if (!identity.title) continue
-    // 削除できない行（おすすめ = Reader ロール、3点メニュー無し）にはチェックボックスを
+    // 削除できない行（おすすめ = Reader ロール。判定は isDeletableRow / §8.14）にはチェックボックスを
     // 出さない（issue #23）。ノード再利用で削除可能行→削除不可行に化けた場合は
     // 注入済みラベルを掃除する。
     if (!isDeletableRow(row)) {
@@ -29,13 +29,16 @@ export function injectRowCheckboxes(store: SelectionStore, root: ParentNode = do
       // aria-label / キー属性が SelectionStore や読み上げとズレるのを防ぐ / issue #25）。
       // 属性書き込みはキー変化時のみ（無関係な mutation バッチでの全行無条件書き込み
       // ＋属性セレクタ再評価を避ける）。
-      // 旧キーの掃除（prune）は行わない: title 識別＋Angular のノード再利用下では、
+      // 旧キーの掃除（prune）は行わない: Angular のノード再利用下では（キーが ID でもタイトルでも）、
       // observer tick で「削除/リネームで消えた行」と「フィルタタブで非表示になった
       // だけの行」を区別できず、可視性ベースで prune するとタブ往復で選択が無言消失
       // する（§8.5 のフィルタタブはサブセット描画）。削除フロー由来の解除は main.ts が
       // succeeded キーを明示的に外す（レビュー第3ラウンド finding 1）。
       if (existing.getAttribute(CHECKBOX_ATTR) !== target.key) {
         existing.setAttribute(CHECKBOX_ATTR, target.key)
+      }
+      // キーが ID のとき（§8.14）、リネームではキーが変わらないので aria-label は別に追従させる。
+      if (existing.getAttribute('aria-label') !== target.title) {
         existing.setAttribute('aria-label', target.title)
       }
       existing.checked = store.has(target.key)

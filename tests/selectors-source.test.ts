@@ -87,6 +87,23 @@ describe('source-flow selectors', () => {
     expect(el?.classList.contains('drop-zone-icon-button')).toBe(true)
   })
 
+  it('getWebsiteChip matches the 2026-10 real-DOM source-action-button (§8.13)', () => {
+    const dialog = document.createElement('div')
+    // 実 DOM: 種別ボタンは button.source-action-button に変わり、アイコンのリガチャ文字列
+    // （link_2 / video_youtube）が textContent に混ざる。同ダイアログには「ウェブ」の
+    // コーパス選択ボタン（source-action-button 非該当）も常在する。
+    dialog.innerHTML = `
+      <button aria-label="ウェブ">languageウェブkeyboard_arrow_down</button>
+      <div class="source-buttons">
+        <button class="source-action-button">uploadファイルをアップロード</button>
+        <button class="source-action-button">link_2video_youtubeウェブサイト</button>
+        <button class="source-action-button">driveドライブ</button>
+      </div>`
+    const el = getWebsiteChip(dialog)
+    expect(el?.classList.contains('source-action-button')).toBe(true)
+    expect(el?.textContent).toContain('ウェブサイト')
+  })
+
   it('getSourceUrlInput matches textarea[formcontrolname="urls"], else input[type=url]', () => {
     const dialog = document.createElement('div')
     dialog.innerHTML = `<input type="checkbox"><input type="url">`
@@ -138,6 +155,27 @@ describe('source-flow selectors', () => {
   it('getCreateNewButton falls back to aria-label / text', () => {
     document.body.innerHTML = `<button aria-label="ノートブックを新規作成">作成</button>`
     expect(getCreateNewButton()?.getAttribute('aria-label')).toBe('ノートブックを新規作成')
+  })
+
+  it('getCreateNewButton matches the 2026-10 real-DOM button (no stable class, aria-label「新しいノートブック」) (§8.13)', () => {
+    // 実 DOM: create-new-button クラスは消滅し、汎用 Material クラスのみ。
+    // textContent にはアイコンのリガチャ（add_2）が混ざる。
+    document.body.innerHTML = `
+      <div class="projects-header-actions">
+        <button class="mdc-button mat-mdc-unelevated-button" aria-label="新しいノートブック">
+          <span class="mdc-button__label">add_2新しいノートブック</span>
+        </button>
+      </div>`
+    expect(getCreateNewButton()?.getAttribute('aria-label')).toBe('新しいノートブック')
+  })
+
+  it('getCreateNewButton prefers an exact aria-label over an earlier button that merely contains the text', () => {
+    // 「新しいノートブック…」というタイトルのノートブックのボタンが先に並んでいても、
+    // aria-label 完全一致の作成ボタンを優先する（誤って既存ノートブックを開かない）。
+    document.body.innerHTML = `
+      <button aria-label="新しいノートブックの下書き を開く">新しいノートブックの下書き</button>
+      <button aria-label="新しいノートブック">add_2新しいノートブック</button>`
+    expect(getCreateNewButton()?.getAttribute('aria-label')).toBe('新しいノートブック')
   })
 
   it('getCreateNewButton ignores buttons injected by this extension', () => {
