@@ -105,6 +105,14 @@ export function isDeletableRow(row: HTMLElement): boolean {
   return getMoreButton(row) != null && row.closest(SELECTORS.featuredSection) == null
 }
 
+// 選択・削除の対象にできる行か（= 削除可能 かつ タイトル充填済み）。
+// 行挿入〜タイトル充填の間は identity が空で、チェックボックス注入（row-checkbox.ts）はその行を
+// スキップする。「すべて選択」/ 対象確定 / 同期も同じ規則に揃え、チェックボックスの無い行が
+// 空キー `title:` で選択・削除対象に混入しないようにする（issue #33）。
+export function isSelectableRow(row: HTMLElement): boolean {
+  return isDeletableRow(row) && getRowIdentity(row).title !== ''
+}
+
 // 削除対象の行を選択キーで引く（ID があれば ID、無ければタイトル。types.ts の makeTarget）。
 // ID で識別した対象を、タイトルが同じだけの別行に取り違えない。検索は削除可能な行に限定する:
 // おすすめ行にも 3点メニューが付いた（§8.14）ため、タイトルキーにフォールバックした場合、

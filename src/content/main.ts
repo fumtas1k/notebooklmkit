@@ -3,7 +3,7 @@ import {
   getMoreButton, getDeleteMenuItem, getConfirmDialog, getConfirmDeleteButton,
   getAddSourceButton, getSourceDialog, getWebsiteChip,
   getSourceUrlInput, getSourceSubmitButton, getCreateNewButton, getAudioOverviewButton,
-  getAudioGenerationCard, getAudioGenerateButton, SOURCE_TEXT, isDeletableRow, getListObserveTarget,
+  getAudioGenerationCard, getAudioGenerateButton, SOURCE_TEXT, isSelectableRow, getListObserveTarget,
 } from './selectors'
 import {
   makeTarget, type NotebookTarget, CREATE_RESULT_MESSAGE, PENDING_TTL_MS, type PendingCreate,
@@ -47,7 +47,8 @@ export function buildTargets(store: SelectionStore, root: ParentNode = document)
   return getNotebookRows(root)
     // 削除不可行（おすすめ/Reader 行。判定は isDeletableRow / §8.14）は対象から除外する（防御。issue #23）。
     // 通常経路ではチェックボックスが注入されないため選択され得ないが、明示除外で意図を固定する。
-    .filter(isDeletableRow)
+    // タイトル未充填行（空 identity）も同じ理由で除外する（isSelectableRow / issue #33）。
+    .filter(isSelectableRow)
     .map((row) => makeTarget(getRowIdentity(row)))
     .filter((tgt) => selected.has(tgt.key))
 }
@@ -87,7 +88,8 @@ export function init(root: ParentNode = document): () => void {
     handlers: {
       onSelectAll: () => {
         // 削除不可行（おすすめ/Reader 行。判定は isDeletableRow / §8.14）は選択に含めない（issue #23）。
-        store.replaceAll(getNotebookRows(root).filter(isDeletableRow).map((r) => getRowKey(r)))
+        // タイトル未充填行もチェックボックスが無いので含めない（issue #33）。
+        store.replaceAll(getNotebookRows(root).filter(isSelectableRow).map((r) => getRowKey(r)))
         syncCheckboxes(store, root)
       },
       onClearAll: () => { store.clear(); syncCheckboxes(store, root) },
@@ -131,7 +133,7 @@ export function init(root: ParentNode = document): () => void {
       // 分母は削除可能行のみ（buildTargets / onSelectAll と揃える）。削除不可行
       // （Reader）を数えると、混在リストで削除可能行を全選択しても isSelectAll が
       // false に希薄化し、件数タイプ確認（strong confirm）が漏れる（issue #23 レビュー指摘1）。
-      const totalRows = getNotebookRows(root).filter(isDeletableRow).length
+      const totalRows = getNotebookRows(root).filter(isSelectableRow).length
       const isSelectAll = targets.length === totalRows
       const ok = await confirmDeletion({ count: targets.length, isSelectAll, t })
       // confirm 待機中に teardown された場合は、たとえ確定されても進めない。
@@ -290,6 +292,9 @@ export function initImport(root: ParentNode = document): () => void {
 
 function syncCheckboxes(store: SelectionStore, root: ParentNode): void {
   for (const row of getNotebookRows(root)) {
+    // タイトルが一時的に空の行は同期しない（injectRowCheckboxes と同じ規則。空キーで
+    // checked を上書きしない。充填時の mutation で注入側が同期し直す。issue #33）。
+    if (!getRowIdentity(row).title) continue
     const key = getRowKey(row)
     const box = row.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}]`)
     if (box) box.checked = store.has(key)

@@ -81,4 +81,41 @@ describe('action bar', () => {
     expect(document.querySelector('[data-nlk="bar-count"]')!.textContent).toContain('0')
     expect(document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.disabled).toBe(true)
   })
+
+  // issue #72: refresh() は一覧 observer の tick ごとに呼ばれる。値が変わっていなければ DOM を書き換えない
+  // （将来 mount 先が監視対象に入っても自己発火ループにならないための冪等性）。
+  it('does not touch the DOM on refresh() when nothing changed', () => {
+    const store = new SelectionStore()
+    store.replaceAll(['a'])
+    const bar = mountActionBar({ store, t, handlers: noop })
+    const el = document.querySelector('[data-nlk="action-bar"]')!
+    const mo = new MutationObserver(() => {})
+    mo.observe(el, { childList: true, subtree: true, characterData: true, attributes: true })
+    bar.refresh()
+    bar.refresh()
+    expect(mo.takeRecords()).toEqual([])
+    mo.disconnect()
+  })
+
+  it('still re-renders on refresh() when the injected count changed', () => {
+    const store = new SelectionStore()
+    let n = 1
+    const bar = mountActionBar({ store, t, handlers: noop, count: () => n })
+    n = 3
+    bar.refresh()
+    expect(document.querySelector('[data-nlk="bar-count"]')!.textContent).toContain('3')
+    expect(document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!.disabled).toBe(false)
+  })
+
+  it('re-renders when busy toggles even if the count is unchanged', () => {
+    const store = new SelectionStore()
+    store.replaceAll(['a'])
+    const bar = mountActionBar({ store, t, handlers: noop })
+    const del = document.querySelector<HTMLButtonElement>('[data-nlk="bar-delete"]')!
+    bar.setBusy(true)
+    expect(del.hidden).toBe(true)
+    bar.setBusy(false)
+    expect(del.hidden).toBe(false)
+    expect(del.disabled).toBe(false)
+  })
 })

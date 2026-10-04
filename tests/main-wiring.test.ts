@@ -397,7 +397,7 @@ describe('runDelete error recovery', () => {
     // 古いスナップショットのまま削除に進んではならない
     expect(deleteNotebooks).not.toHaveBeenCalled()
     const progress = document.querySelector('[data-nlk="bar-progress"]')
-    expect(progress!.textContent).toMatch(/選択が変更された|selection changed/)
+    expect(progress!.textContent).toMatch(/削除対象の一覧が変わった|notebooks to delete changed/)
 
     // 中止後は deleting フラグが解除され、再度削除を開始できる
     deleteBtn!.click()
@@ -684,6 +684,68 @@ describe('init with notebook ids (same-titled notebooks, §8.14)', () => {
     await tick()
     expect(a.getAttribute(CHECKBOX_ATTR)).toBe('id:id-c')
     expect(a.checked).toBe(false)
+    dispose()
+  })
+})
+
+// issue #33 / #34: タイトル未充填行（行挿入〜タイトル充填の間）は identity が空になる。
+// チェックボックス注入はこの行をスキップするので、選択・削除対象・同期の各経路も同じ規則に揃える。
+describe('rows whose title is not filled yet (#33 / #34)', () => {
+  const ROW = (title: string) => `
+  <tr mat-row role="row"><td class="title-column"><span class="project-table-title">${title}</span></td>
+    <td class="actions-column"><project-action-button><button class="project-button-more"></button></project-action-button></td></tr>`
+  const LIST_WITH_EMPTY = `
+<div class="all-projects-container"><project-table><table class="project-table"><tbody>
+  ${ROW('A')}${ROW('')}
+</tbody></table></project-table></div>`
+  const flush = () => new Promise((r) => setTimeout(r, 0))
+
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  it('select-all does not put the empty key into the store (count matches the checkboxes)', () => {
+    const root = document.createElement('div')
+    root.innerHTML = LIST_WITH_EMPTY
+    const dispose = init(root)
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-select-all"]')!.click()
+    expect(root.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(1)
+    expect(document.querySelector('[data-nlk="bar-count"]')!.textContent).toMatch(/1/)
+    dispose()
+  })
+
+  it('buildTargets never targets a row with an empty title even if the empty key is in the store', () => {
+    document.body.innerHTML = LIST_WITH_EMPTY
+    const store = new SelectionStore()
+    store.set('title:', true)
+    store.set('title:A', true)
+    expect(buildTargets(store).map((t) => t.key)).toEqual(['title:A'])
+  })
+
+  it('clear-all keeps the checked state of a row whose title is transiently empty (same rule as injection)', () => {
+    const root = document.createElement('div')
+    root.innerHTML = LIST
+    const dispose = init(root)
+    const boxA = root.querySelector<HTMLInputElement>(`[${CHECKBOX_ATTR}="title:A"]`)!
+    boxA.checked = true
+    // タイトルが一時的に空になった行は、注入側と同じく同期をスキップする
+    root.querySelector('.project-table-title')!.textContent = ''
+    document.querySelector<HTMLButtonElement>('[data-nlk="bar-clear-all"]')!.click()
+    expect(boxA.checked).toBe(true)
+    dispose()
+  })
+
+  // #34: ガードのコメントが主張する「タイトル充填時の mutation で observer が再発火して注入される」
+  // 自己修復パスそのもの。空 span へのテキスト充填は childList レコード（テキストノード追加）になる。
+  it('injects the checkbox once the empty title is filled in (observer self-heal)', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    root.innerHTML = LIST_WITH_EMPTY
+    const dispose = init(root)
+    expect(root.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(1)
+    const titles = root.querySelectorAll('.project-table-title')
+    titles[1].appendChild(document.createTextNode('Late'))
+    await flush()
+    expect(root.querySelector(`[${CHECKBOX_ATTR}="title:Late"]`)).not.toBeNull()
+    expect(root.querySelectorAll(`[${CHECKBOX_ATTR}]`).length).toBe(2)
     dispose()
   })
 })

@@ -47,8 +47,14 @@ export function mountActionBar(opts: {
 
   let busy = false
   const currentCount = () => countFn?.() ?? store.size
+  // 前回描画した値。refresh() は一覧 observer の tick ごとに呼ばれるため、値が変わらなければ
+  // DOM を書き換えない（冗長な textContent 書き換えと、mount 先が将来監視対象に入った場合の
+  // 自己発火ループを避ける。injectRowCheckboxes の「変化時のみ書き込み」と対称。issue #72）。
+  let rendered: { size: number; busy: boolean } | null = null
   const render = () => {
     const size = currentCount()
+    if (rendered && rendered.size === size && rendered.busy === busy) return
+    rendered = { size, busy }
     count.textContent = t('selectedCount', { count: size })
     del.textContent = t('deleteSelected', { count: size })
     del.disabled = busy || size === 0
