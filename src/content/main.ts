@@ -391,6 +391,8 @@ function defaultCreateRunner(root: ParentNode): (urls: string[]) => Promise<bool
   return async (urls) => {
     const ok = await createNotebookWithUrls(urls, {
       getCreateNewButton: () => getCreateNewButton(root),
+      // #119: 作成後にダイアログが自動で開かないとき押す。ノートブックページのボタン（root 内）。
+      getAddSourceButton: () => getAddSourceButton(root),
       getSourceDialog: () => getSourceDialog(),
       getWebsiteChip,
       getUrlInput: getSourceUrlInput,
