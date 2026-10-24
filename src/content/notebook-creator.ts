@@ -2,6 +2,8 @@ import type { waitFor as WaitFor } from './dom-utils'
 
 export interface CreatorDeps {
   getCreateNewButton(): HTMLElement | null
+  // ノートブックページの「ソースを追加」。ダイアログが自動で開かないとき押す（#119 / §8.15）。
+  getAddSourceButton(): HTMLElement | null
   getSourceDialog(): HTMLElement | null
   getWebsiteChip(dialog: HTMLElement): HTMLElement | null
   getUrlInput(dialog: HTMLElement): HTMLInputElement | HTMLTextAreaElement | null
@@ -12,7 +14,12 @@ export interface CreatorDeps {
   timeout?: number
 }
 
-// 「新規作成 → ウェブサイト → URL 挿入」で新規ノートブックを1つ作る。
+// 「ソースを追加」だけが見えたとき、ダイアログの自動オープンを待つ猶予（ms）。自動で開く UI
+// （旧 UI）でも「ソースを追加」がダイアログより先に描画され得るので、すぐ押すと二重に開き得る
+// （#119）。自動オープンの遅延は計測していない（§8.15）。
+const AUTO_OPEN_GRACE_MS = 2000
+
+// 「新規作成 →（自動で開かなければ「ソースを追加」）→ ウェブサイト → URL 挿入」で新規ノートブックを1つ作る。
 // 複数 URL は改行連結で1回挿入（NotebookLM の URL 入力欄は複数 URL を1回受付）。
 // 失敗（要素不在 / タイムアウト / 中断）は false を返す（呼び出し側が badge '!'）。
 // 注: opts.signal は deleter/importer と同じ中断規約の布石。現状クリップ経路
@@ -28,15 +35,37 @@ export async function createNotebookWithUrls(
   const timeout = deps.timeout ?? 15000
   const w = deps.waitFor
   try {
-    // ① 新規作成ボタン出現待ち → クリック(新規作成 → ?addSource=true に遷移しダイアログ自動オープン）
+    // ① 新規作成ボタン出現待ち → クリック。遷移先は /notebook/<id>。旧 UI は ?addSource=true 付きで
+    // ソース追加ダイアログを自動で開いたが、2026-10-25 時点では開かない（§8.15 / #119）。
     const createBtn = await w(() => deps.getCreateNewButton(), { timeout, signal })
     deps.click(createBtn)
-    // ② ソース追加ダイアログ + 「ウェブサイト」チップ出現待ち → クリック
-    const opened = await w(() => {
+    const findOpened = () => {
       const dialog = deps.getSourceDialog()
       const chip = dialog ? deps.getWebsiteChip(dialog) : null
       return dialog && chip ? { dialog, chip } : null
+    }
+    // 「ソースを追加」だけが見えている。自動で開く途中かもしれないので猶予だけ待ち、
+    // 開かなければ押して開く。
+    const openViaAddSource = async () => {
+      // 猶予が尽きたらタイムアウトで素通りする（中断は直後に確認する）。
+      await w(() => deps.getSourceDialog(), { timeout: AUTO_OPEN_GRACE_MS, signal }).catch(() => null)
+      if (signal?.aborted) throw new Error('aborted')
+      // ダイアログが無いことの確認から「ソースを追加」のクリックまでは同期（間に await を足さない）。
+      // 猶予中に開いていたら押さない（二重に開かない）。
+      if (!deps.getSourceDialog()) {
+        const addBtn = deps.getAddSourceButton()
+        if (addBtn) deps.click(addBtn)
+      }
+      return w(findOpened, { timeout, signal })
+    }
+    // ② ソース追加ダイアログ + 「ウェブサイト」チップか、「ソースを追加」ボタンのどちらかの出現待ち。
+    // ダイアログが先なら従来どおり（「ソースを追加」は押さない）。
+    const first = await w(() => {
+      const found = findOpened()
+      if (found) return { opened: found }
+      return deps.getAddSourceButton() ? { opened: null } : null
     }, { timeout, signal })
+    const opened = first.opened ?? (await openViaAddSource())
     deps.click(opened.chip)
     // ③ URL 入力欄出現待ち → 改行連結で設定（Angular に届くよう input イベント発火込み）
     const input = await w(() => deps.getUrlInput(opened.dialog), { timeout, signal })

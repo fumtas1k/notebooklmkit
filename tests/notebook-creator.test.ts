@@ -29,6 +29,8 @@ function makeDeps(over: Partial<CreatorDeps> = {}): CreatorDeps & {
   return {
     clicks, inputs,
     getCreateNewButton: () => createBtn,
+    // 既定ではダイアログが自動で開く（旧 UI 相当）ので「ソースを追加」は見えなくてよい。
+    getAddSourceButton: () => null,
     getSourceDialog: () => dialog,
     getWebsiteChip: () => chip,
     getUrlInput: () => input,
@@ -72,6 +74,134 @@ describe('createNotebookWithUrls', () => {
     // disabled のままなら submit 待ちがタイムアウト → false
     expect(ok).toBe(false)
     expect(d.clicks).not.toContain(disabled)
+  })
+})
+
+// #119: 「新しいノートブック」押下後、ソース追加ダイアログが自動で開かなくなった（§8.15）。
+// 自動で開かなければノートブックページの「ソースを追加」を押して開く。自動で開く UI では押さない。
+// 順序は実時間のタイマーで作らず、waitFor の呼び出し回数で固定する（CLAUDE.md「順序に意味があるテスト」）。
+describe('createNotebookWithUrls when the source dialog does not open automatically (#119)', () => {
+  // dialogOpen が true の間だけダイアログ（＋チップ）を返す。「ソースを追加」を押すと開く。
+  function makeAddSourceDeps(init: { dialogOpen?: boolean; addSourcePresent?: boolean; opensOnClick?: boolean } = {}) {
+    const state = {
+      dialogOpen: init.dialogOpen ?? false,
+      addSourcePresent: init.addSourcePresent ?? true,
+    }
+    const addSource = { name: 'add-source' } as unknown as HTMLElement
+    const dialog = { isConnected: false } as unknown as HTMLElement
+    // waitFor の述語の外（＝実装の同期の確認）で、猶予の待機（呼び出し番号 2）より後に
+    // getSourceDialog が呼ばれたとき 1 度だけ呼ぶフック。
+    const hooks: { onCheckAfterGrace?: () => void } = {}
+    let inPredicate = false
+    let calls = 0
+    const d = makeDeps({
+      getAddSourceButton: () => (state.addSourcePresent ? addSource : null),
+      getSourceDialog: () => {
+        if (!inPredicate && calls > 2 && hooks.onCheckAfterGrace) {
+          const hook = hooks.onCheckAfterGrace
+          hooks.onCheckAfterGrace = undefined
+          hook()
+        }
+        return state.dialogOpen ? dialog : null
+      },
+    })
+    // 「ソースを追加」をダイアログが開いている間に押したら記録する（二重に開く）。
+    const doubleOpen = { value: false }
+    d.click = (el) => {
+      d.clicks.push(el)
+      if (el !== addSource) return
+      if (state.dialogOpen) doubleOpen.value = true
+      if (init.opensOnClick ?? true) state.dialogOpen = true
+    }
+    // waitFor の呼び出し回数（0 始まり）ごとに、評価前に状態を変えられるようにする。
+    const beforeCall = new Map<number, () => void>()
+    const inner = d.waitFor
+    d.waitFor = ((fn: () => unknown, opts?: unknown) => {
+      beforeCall.get(calls)?.()
+      calls++
+      const tracked = () => {
+        inPredicate = true
+        try { return fn() } finally { inPredicate = false }
+      }
+      return (inner as unknown as (f: () => unknown, o?: unknown) => Promise<unknown>)(tracked, opts)
+    }) as unknown as CreatorDeps['waitFor']
+    const names = () => d.clicks.map((c) => (c as unknown as { name?: string }).name ?? 'submit')
+    return { d, state, addSource, beforeCall, hooks, names, doubleOpen }
+  }
+
+  it('clicks ソースを追加 when the dialog does not open, then completes as before', async () => {
+    const { d, names } = makeAddSourceDeps()
+    const ok = await createNotebookWithUrls(['https://a/', 'https://b/'], d)
+    expect(ok).toBe(true)
+    expect(names()).toEqual(['create', 'add-source', 'chip', 'submit'])
+    expect(d.inputs).toEqual([[expect.anything(), 'https://a/\nhttps://b/']])
+  })
+
+  it('does not click ソースを追加 when the dialog opens automatically', async () => {
+    const { d, names } = makeAddSourceDeps({ dialogOpen: true })
+    const ok = await createNotebookWithUrls(['https://a/'], d)
+    expect(ok).toBe(true)
+    expect(names()).toEqual(['create', 'chip', 'submit'])
+  })
+
+  it('does not click ソースを追加 when the dialog opens automatically during the grace wait', async () => {
+    const { d, state, beforeCall, names } = makeAddSourceDeps()
+    // waitFor の呼び出し: 0=①新規作成, 1=②ダイアログか「ソースを追加」, 2=猶予（自動オープン待ち）。
+    // ②の時点では「ソースを追加」だけが見えていて、猶予の最中に自動で開く。
+    beforeCall.set(2, () => { state.dialogOpen = true })
+    const ok = await createNotebookWithUrls(['https://a/'], d)
+    expect(ok).toBe(true)
+    expect(names()).toEqual(['create', 'chip', 'submit'])
+  })
+
+  // 確認からクリックまでが同期であることの固定。猶予が尽きた直後（次の待機）に自動で開いても、
+  // 開いている最中に「ソースを追加」を押していないこと。
+  it('never clicks ソースを追加 while the dialog is open, even if it opens right after the grace wait', async () => {
+    const { d, state, beforeCall, names, doubleOpen } = makeAddSourceDeps()
+    // 3=猶予の次の待機（正しい実装ではクリック後のダイアログ+チップ待ち）
+    beforeCall.set(3, () => { state.dialogOpen = true })
+    const ok = await createNotebookWithUrls(['https://a/'], d)
+    expect(ok).toBe(true)
+    expect(names()).toEqual(['create', 'add-source', 'chip', 'submit'])
+    expect(doubleOpen.value).toBe(false)
+  })
+
+  // 上のテストは状態を waitFor の呼び出し単位でしか変えないので、確認とクリックの間に await を
+  // 足す変異を捕まえられない。猶予後の不在確認の時点でマイクロタスクにダイアログを開く処理を積み、
+  // 確認→クリックが同期なら（マイクロタスクが走る前に押すので）二重に開かないことを固定する。
+  it('clicks ソースを追加 in the same synchronous step as the dialog-absent check', async () => {
+    const { d, state, hooks, names, doubleOpen } = makeAddSourceDeps()
+    hooks.onCheckAfterGrace = () => { queueMicrotask(() => { state.dialogOpen = true }) }
+    const ok = await createNotebookWithUrls(['https://a/'], d)
+    expect(hooks.onCheckAfterGrace).toBeUndefined()   // フックが実際に呼ばれた
+    expect(ok).toBe(true)
+    expect(names()).toEqual(['create', 'add-source', 'chip', 'submit'])
+    expect(doubleOpen.value).toBe(false)
+  })
+
+  it('returns false when neither the dialog nor ソースを追加 appears', async () => {
+    const { d, names } = makeAddSourceDeps({ addSourcePresent: false })
+    const ok = await createNotebookWithUrls(['https://a/'], d)
+    expect(ok).toBe(false)
+    expect(names()).toEqual(['create'])
+    expect(d.inputs).toEqual([])
+  })
+
+  it('returns false without inserting when ソースを追加 does not open the dialog', async () => {
+    const { d, names } = makeAddSourceDeps({ opensOnClick: false })
+    const ok = await createNotebookWithUrls(['https://a/'], d)
+    expect(ok).toBe(false)
+    expect(names()).toEqual(['create', 'add-source'])
+    expect(d.inputs).toEqual([])
+  })
+
+  it('does not click ソースを追加 when aborted during the grace wait', async () => {
+    const { d, beforeCall, names } = makeAddSourceDeps()
+    const ac = new AbortController()
+    beforeCall.set(2, () => { ac.abort() })
+    const ok = await createNotebookWithUrls(['https://a/'], d, { signal: ac.signal })
+    expect(ok).toBe(false)
+    expect(names()).toEqual(['create'])
   })
 })
 
@@ -210,6 +340,29 @@ describe('createNotebookWithUrls with the real waitFor (polling / abort)', () =>
     await expect(createNotebookWithUrls(['https://a/'], d, { signal: ac.signal })).resolves.toBe(true)
     // ①新規作成 ②ダイアログ+チップ ③URL 欄 ④挿入ボタン は signal つき、⑤完了待ちだけ無し
     expect(seen).toEqual([ac.signal, ac.signal, ac.signal, ac.signal, undefined])
+  })
+
+  // #119: 「ソースを追加」を押す経路でも、挿入クリック前の待機（猶予を含む）はすべて signal つき。
+  it('passes the signal to every wait before the submit click on the ソースを追加 path too', async () => {
+    const addSource = { name: 'add-source' } as unknown as HTMLElement
+    const dialog = { isConnected: false } as unknown as HTMLElement
+    let dialogOpen = false
+    const { d } = makePollingDeps()
+    d.getAddSourceButton = () => addSource
+    d.getSourceDialog = () => (dialogOpen ? dialog : null)
+    d.click = (el) => { d.clicks.push(el); if (el === addSource) dialogOpen = true }
+    const ac = new AbortController()
+    const seen: (AbortSignal | undefined)[] = []
+    d.waitFor = ((fn: () => unknown, opts: { signal?: AbortSignal } = {}) => {
+      seen.push(opts.signal)
+      return waitFor(fn, opts)
+    }) as CreatorDeps['waitFor']
+    const p = createNotebookWithUrls(['https://a/'], d, { signal: ac.signal })
+    await vi.advanceTimersByTimeAsync(TIMEOUT * 5)
+    await expect(p).resolves.toBe(true)
+    expect(d.clicks).toContain(addSource)
+    // ①新規作成 ②ダイアログか「ソースを追加」 猶予 ③ダイアログ+チップ ④URL 欄 ⑤挿入ボタン、⑥完了待ちだけ無し
+    expect(seen).toEqual([ac.signal, ac.signal, ac.signal, ac.signal, ac.signal, ac.signal, undefined])
   })
 })
 

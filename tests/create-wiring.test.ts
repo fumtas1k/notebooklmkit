@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { handlePendingCreate, type CreateEnv } from '../src/content/main'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { handlePendingCreate, start, type CreateEnv } from '../src/content/main'
 import { CREATE_RESULT_MESSAGE, PENDING_TTL_MS } from '../src/types'
 import { createNotebookWithUrls, type CreatorDeps } from '../src/content/notebook-creator'
 
@@ -75,6 +75,7 @@ describe('handlePendingCreate with a malformed pendingCreate', () => {
     const el = (name: string) => ({ name, disabled: false, isConnected: false }) as unknown as HTMLElement
     const deps: CreatorDeps = {
       getCreateNewButton: () => el('create'),
+      getAddSourceButton: () => null,
       getSourceDialog: () => el('dialog'),
       getWebsiteChip: () => el('chip'),
       getUrlInput: () => ({}) as HTMLTextAreaElement,
@@ -138,5 +139,50 @@ describe('handlePendingCreate with a malformed pendingCreate', () => {
     await handlePendingCreate(env, r.run)
     expect(env.sent).toEqual([])
     expect(r.clicks).toEqual([])
+  })
+})
+
+// #119: start() の既定ランナー（defaultCreateRunner）を実 DOM（jsdom）に結線して、作成後に
+// ダイアログが自動で開かない UI で「ソースを追加」を押してから URL を挿入することを固定する。
+// 単体テスト（notebook-creator.test.ts）はフェイクの deps を渡すので、main.ts の配線の誤り
+// （例: getAddSourceButton の未配線）はここでしか捕まえられない。
+describe('start() default create runner on a page where the source dialog does not auto-open (#119)', () => {
+  beforeEach(() => { vi.useFakeTimers(); document.body.innerHTML = '' })
+  afterEach(() => { vi.useRealTimers(); document.body.innerHTML = '' })
+
+  function on(sel: string, handler: () => void, root: ParentNode = document) {
+    root.querySelector<HTMLElement>(sel)!.addEventListener('click', handler)
+  }
+
+  it('clicks ソースを追加, then website → insert, and reports success', async () => {
+    const log: string[] = []
+    let inserted = ''
+    document.body.innerHTML = '<button aria-label="新しいノートブック">新しいノートブック</button>'
+    on('button', () => {
+      log.push('create')
+      // 遷移先の /notebook/<id> は「ソースを追加」だけを描画し、ダイアログは開かない（§8.15）。
+      document.body.innerHTML = '<button aria-label="ソースを追加">ソースを追加</button>'
+      on('button', () => {
+        log.push('add-source')
+        const dialog = document.createElement('mat-dialog-container')
+        dialog.innerHTML =
+          '<button class="source-action-button">ウェブサイト</button>' +
+          '<textarea formcontrolname="urls"></textarea><button class="insert">挿入</button>'
+        on('.source-action-button', () => { log.push('chip') }, dialog)
+        on('.insert', () => {
+          log.push('submit')
+          inserted = dialog.querySelector('textarea')!.value
+          dialog.remove()
+        }, dialog)
+        document.body.append(dialog)
+      })
+    })
+    const env = makeEnv({ urls: ['https://a/', 'https://b/'], ts: 1000, tabId: 5 }, 1500)
+    const dispose = start(document, () => '/', env)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(log).toEqual(['create', 'add-source', 'chip', 'submit'])
+    expect(inserted).toBe('https://a/\nhttps://b/')
+    expect(env.sent).toEqual([{ type: CREATE_RESULT_MESSAGE, ok: true, tabId: 5 }])
+    dispose()
   })
 })
