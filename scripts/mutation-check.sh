@@ -20,6 +20,9 @@
 # **差分の行番号を必ず見る。** `s///` は最初の一致だけを書き換えるので、同じ行を持つ別の関数
 # （例: runDelete と runImport の `if (result.aborted) {`）に当たると、狙った箇所は壊れておらず
 # 「未検出」と誤って出る。検出以外が 1 件でもあれば終了コード 1。
+# 同じ行が複数あるときは、狙った箇所にしか無い隣の行（コメント等）ごと一致させて当て先を一意にする:
+#   作成側の配線を外す ::: src/content/main.ts ::: s/(#119[^\n]*\n\s*)getAddSourceButton: \(\) => getAddSourceButton\(root\)/$1getAddSourceButton: () => null/
+# （#120。素の `s/getAddSourceButton: \(\) => .../` はインポート側の同じ行に当たっていた）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
